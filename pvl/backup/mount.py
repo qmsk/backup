@@ -79,6 +79,15 @@ class Mount (object) :
         # umount
         command(self.UMOUNT, self.mnt)
 
+    def __repr__ (self) :
+        return "Mount(dev={dev}, mnt={mnt})".format(
+                dev     = repr(self.dev),
+                mnt     = repr(self.mnt),
+        )
+
+    def __str__ (self) :
+        return self.mnt
+
 @contextlib.contextmanager
 def mount (dev, mnt, **kwargs) :
     """

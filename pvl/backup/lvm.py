@@ -82,6 +82,9 @@ class LVM (object) :
             log.debug("cleanup: {0}".format(snapshot))
             snapshot.close()
 
+    def __str__ (self) :
+        return self.name
+
     def __repr__ (self) :
         return "LVM(name={name})".format(name=repr(self.name))
 
@@ -142,6 +145,9 @@ class LVMVolume (object) :
         """
 
         return os.path.exists(self.dev_path)
+
+    def __str__ (self) :
+        return self.lvm_path
 
     def __repr__ (self) :
         return "LVMVolume(lvm={lvm}, name={name})".format(
