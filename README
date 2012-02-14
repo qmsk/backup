@@ -1,0 +1,23 @@
+what:
+    rsync-based backups.
+
+scripts:
+    rsync-wrapper:
+        Provides an rsync wrapper binary (scripts/pvlbackup-rsync-wrapper) intended to be used via ~/.ssh/authorized_keys:
+
+            command="/usr/local/bin/pvlbackup-rsync-wrapper --readonly --restrict-path=/foo" ssh-rsa ...
+
+        XXX: the current implementation is not exactly security-audited, the restrictions serve more to avoid mistakes, and do not protect against
+             determined misuse of your ssh key..
+        
+        LVM Snapshots:
+
+            As an additional feature, rsync-wrapper provides support for reading LVM volumes as snapshots:
+
+                rsync -ax foohost:lvm:vg00:lv00 /media/backup/foohost-lv00
+
+            This will transparently create a snapshot, mount it (read-only), and run the server-side rsync from within the mounted snapshot.
+
+            TODO:
+                * fsck?
+
