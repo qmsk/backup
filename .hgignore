@@ -1,0 +1,6 @@
+syntax: regexp
+
+\.sw[op]$
+\.pyc$
+
+^misc/
