@@ -12,8 +12,53 @@ logging.basicConfig(
 )
 log = logging.getLogger()
 
-LVM_VG              = 'asdf'
+def invoke (cmd, args) :
+    """
+        Invoke a command directly.
 
+        Doesn't give any data on stdin, and keeps process stderr.
+        Returns stdout.
+    """
+    
+    log.debug("cmd={cmd}, args={args}".format(cmd=cmd, args=args))
+
+    p = subprocess.Popen([cmd] + args, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+
+    # get output
+    stdout, stderr = p.communicate(input=None)
+
+    if p.returncode :
+        raise Exception("{cmd} failed: {returncode}".format(cmd=cmd, returncode=p.returncode))
+
+    return stdout
+
+def optargs (*args, **kwargs) :
+    """
+        Convert args/options into command-line format
+    """
+
+    # process
+    opts = [('--{opt}'.format(opt=opt), value if value != True else None) for opt, value in kwargs.iteritems() if value]
+
+    # flatten
+    opts = [str(opt_part) for opt_parts in opts for opt_part in opt_parts if opt_part]
+
+    args = [str(arg) for arg in args if arg]
+
+    return opts + args
+ 
+def command (cmd, *args, **opts) :
+    """
+        Invoke a command with options/arguments, given via Python arguments/keyword arguments.
+
+        Return stdout.
+    """
+    
+    log.debug("{cmd} {opts} {args}".format(cmd=cmd, args=args, opts=opts))
+
+    # invoke
+    return invoke(cmd, optargs(*args, **opts))
+   
 class LVM (object) :
     """
         LVM VolumeGroup
@@ -43,43 +88,15 @@ class LVM (object) :
 
         return '/dev/{vg}/{lv}'.format(vg=self.name, lv=lv)
 
-    def invoke (self, cmd, args) :
-        """
-            Invoke LVM command directly.
-
-            Doesn't give any data on stdin, and keeps process stderr.
-            Returns stdout.
-        """
-        
-        log.debug("cmd={cmd}, args={args}".format(cmd=cmd, args=args))
-
-        p = subprocess.Popen([self.LVM, cmd] + args, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-
-        # get output
-        stdout, stderr = p.communicate(input=None)
-
-        if p.returncode :
-            raise Exception("LVM ({cmd}) failed: {returncode}".format(cmd=cmd, returncode=p.returncode))
-
-        return stdout
-
     def command (self, cmd, *args, **opts) :
         """
-            Invoke simple LVM command with options/arguments, and no output.
+            Invoke a command with options/arguments, given via Python arguments/keyword arguments
         """
-
-        log.debug("cmd={cmd}, opts={opts}, args={args}".format(cmd=cmd, args=args, opts=opts))
-
-        # process
-        opts = [('--{opt}'.format(opt=opt), value if value != True else None) for opt, value in opts.iteritems() if value]
-
-        # flatten
-        opts = [str(opt_part) for opt_parts in opts for opt_part in opt_parts if opt_part]
-
-        args = [str(arg) for arg in args if arg]
+        
+        log.debug("{cmd} {opts} {args}".format(cmd=cmd, args=args, opts=opts))
 
         # invoke
-        self.invoke(cmd, opts + args)
+        invoke(self.LVM, [cmd] + optargs(*args, **opts))
 
     def volume (self, name) :
         """
@@ -101,11 +118,17 @@ class LVM (object) :
         log.debug("creating snapshot from {base}: {opts}".format(base=base, opts=kwargs))
         snapshot = LVMSnapshot.create(self, base, **kwargs)
 
-        log.debug("got snapshot={0}".format(snapshot))
-        yield snapshot
+        try :
+            log.debug("got snapshot={0}".format(snapshot))
+            yield snapshot
 
-        log.debug("cleanup: {0}".format(snapshot))
-        snapshot.close()
+        finally:
+            # cleanup
+            log.debug("cleanup: {0}".format(snapshot))
+            snapshot.close()
+
+    def __repr__ (self) :
+        return "LVM(name={name})".format(name=repr(self.name))
 
 class LVMVolume (object) :
     """
@@ -130,6 +153,11 @@ class LVMVolume (object) :
     def dev_path (self) :
         return self.lvm.lv_path(self.name)
 
+    def __repr__ (self) :
+        return "LVMVolume(lvm={lvm}, name={name})".format(
+                lvm     = repr(self.lvm),
+                name    = repr(self.name),
+        )
 
 class LVMSnapshot (LVMVolume) :
     """
@@ -200,12 +228,113 @@ class LVMSnapshot (LVMVolume) :
         # XXX: risky!
         self.lvm.command('lvremove', '-f', self.lvm_path)
 
+    def __repr__ (self) :
+        return "LVMSnapshot(lvm={lvm}, base={base}, name={name})".format(
+                lvm     = str(self.lvm),
+                base    = str(self.base),
+                name    = repr(self.name),
+        )
+
+
+class MountError (Exception) :
+    pass
+
+class Mount (object) :
+    """
+        Trivial filesystem mounting
+    """
+
+    MOUNT   = '/bin/mount'
+    UMOUNT  = '/bin/umount'
+
+
+    def __init__ (self, dev, mnt, readonly=False) :
+        """
+            dev         - device path
+            mnt         - mount path
+            readonly    - mount readonly
+        """
+
+        self.dev = dev
+        self.mnt = mnt
+        self.readonly = readonly
+
+    @property
+    def path (self) :
+        return self.mnt
+
+    def options (self) :
+        """
+            Mount options as a comma-separated string.
+        """
+
+        options = [
+                ('ro' if self.readonly else None),
+        ]
+
+        return ','.join(option for option in options if option)
+
+    def open (self) :
+        """
+            Mount
+        """
+
+        # check
+        if not os.path.isdir(self.mnt) :
+            raise MountError("Mountpoint is not a directory: {mnt}".format(mnt=self.mnt))
+
+        if os.path.ismount(self.mnt) :
+            raise MountError("Mountpoint is already mounted: {mnt}".format(mnt=self.mnt))
+
+        if not os.path.exists(self.dev) :
+            raise MountError("Device does not exist: {dev}".format(dev=self.dev))
+
+        # mount
+        command(self.MOUNT, self.dev, self.mnt, options=self.options())
+
+    def close (self) :
+        """
+            Un-mount
+        """
+
+        # check
+        if not os.path.ismount(self.mnt):
+            raise MountError("Mountpoint is not mounted: {mnt}".format(mnt=self.mnt))
+
+        # umount
+        command(self.UMOUNT, self.mnt)
+
+@contextlib.contextmanager
+def mount (dev, mnt, **kwargs) :
+    """
+        Use a temporary mount:
+
+        with mount('/dev/...', '/mnt', readonly=True) as mount:
+            ...
+    """
+
+    mount = Mount(dev, mnt, **kwargs)
+
+    # open
+    log.debug("open: %s", mount)
+    mount.open()
+
+    try :
+        log.debug("got: %s", mount)
+        yield mount
+
+    finally:
+        # cleanup
+        log.debug("cleanup: %s", mount)
+        mount.close()
+
 def main (argv) :
     # LVM VolumeGroup to manipulate
     lvm = LVM('asdf')
 
-    # XXX: get LV from rsync command
+    # XXX: get backup target from rsync command
     backup_lv = lvm.volume('test')
+    backup_path = '/mnt'
 
     # snapshot
     log.info("Open snapshot...")
@@ -213,10 +342,14 @@ def main (argv) :
     with lvm.snapshot(backup_lv, tag='backup') as snapshot:
         log.info("Snapshot opened: {name}".format(name=snapshot.lvm_path))
 
-        # ...
+        # mount
+        log.info("Mounting snapshot: %s -> %s", snapshot, backup_path)
 
+        with mount(snapshot.dev_path, backup_path) as mountpoint:
+            log.info("Mounted snapshot: %s", mountpoint)
 
-        log.info("Done, cleaning up")
+            # ...
+            print command('ls', '-l', mountpoint.path)
 
     return 1
 
