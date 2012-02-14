@@ -117,6 +117,7 @@ def main (argv) :
         log.error("No arguments are handled")
         return 2
 
+    # command required
     if not options.command:
         log.error("SSH_ORIGINAL_COMMAND not given")
         return 2

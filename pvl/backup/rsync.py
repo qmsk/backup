@@ -4,9 +4,9 @@
     Apologies for the 'RSync' nomenclature
 """
 
-from pvl.backup.invoke import invoke
 from pvl.backup.lvm import LVM, LVMVolume, LVMSnapshot
 from pvl.backup.mount import mount
+from pvl.backup import invoke
 
 import shlex
 import os.path
@@ -15,6 +15,15 @@ import logging
 
 log = logging.getLogger('pvl.backup.rsync')
 
+# Path to rsync binary
+RSYNC = '/usr/bin/rsync'
+
+def rsync (source, dest, **opts) :
+    """
+        Run rsync.
+    """
+
+    invoke.command(RSYNC, source, dest, **opts)
 
 class RSyncCommandFormatError (Exception) :
     """
@@ -23,36 +32,39 @@ class RSyncCommandFormatError (Exception) :
 
     pass
 
-class RSyncSource (object) :
-    RSYNC = '/usr/bin/rsync'
+class RSyncServer (object) :
+    """
+        rsync server-mode execution.
+    """
 
     def _execute (self, options, path) :
         """
             Underlying rsync just reads from filesystem.
         """
+        
+        # invoke directly, no option-handling, nor stdin/out redirection
+        invoke.invoke(RSYNC, options + ['.', path], data=False)
 
-        invoke(self.RSYNC, options + ['.', path], data=False)
-
-class RSyncFSSource (RSyncSource) :
+class RSyncFSServer (RSyncServer) :
     """
         Normal filesystem backup.
     """
 
     def __init__ (self, path) :
-        RSyncSource.__init__(self)
+        RSyncServer.__init__(self)
 
         self.path = path
 
     def execute (self, options) :
         return self._execute(options, self.path)
 
-class RSyncLVMSource (RSyncSource) :
+class RSyncLVMServer (RSyncServer) :
     """
         Backup LVM LV by snapshotting + mounting it.
     """
 
     def __init__ (self, volume) :
-        RSyncSource.__init__(self)
+        RSyncServer.__init__(self)
 
         self.volume = volume
  
@@ -177,7 +189,7 @@ def parse_source (path, restrict_path=False) :
         # XXX: how to handle=
         log.info("filesystem: %s", path)
 
-        return RSyncFSSource(path)
+        return RSyncFSServer(path)
 
     elif path.startswith('lvm:') :
         # LVM LV
@@ -195,10 +207,9 @@ def parse_source (path, restrict_path=False) :
         lvm = LVM(vg)
         volume = lvm.volume(lv)
 
-        return RSyncLVMSource(volume)
+        return RSyncLVMServer(volume)
        
     else :
         # invalid
         raise RSyncCommandFormatError("Unrecognized backup path")
-
 

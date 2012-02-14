@@ -3,6 +3,7 @@ syntax: regexp
 \.sw[op]$
 \.pyc$
 
+^test/
 ^misc/
 ^dist/
 ^MANIFEST$

@@ -21,3 +21,7 @@ scripts:
             TODO:
                 * fsck?
 
+    rsync-snapshot:
+        Manage hardlinked snapshots stored for configureable intervals.
+
+        Uses rsync --link-dest.

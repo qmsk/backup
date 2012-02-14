@@ -1,0 +1,429 @@
+#!/usr/bin/python
+
+"""
+    Manage rsync --link-dest based snapshots.
+
+    rsync's from <src> to <dst>/snapshots/YYYY-MM-DD-HH-MM-SS using --link-dest <dst>/current.
+
+    Updates symlink <dst>/current -> <dst>/snapshots/...
+
+    Then archives <dst>/current to <dst>/<period>/<date> using --link-dest.
+"""
+
+from pvl.backup import rsync
+
+import optparse
+import os, os.path, stat
+import shutil
+import datetime
+import logging
+
+log = logging.getLogger()
+
+# command-line options
+options = None
+
+def parse_options (argv) :
+    """
+        Parse command-line arguments.
+    """
+
+    parser = optparse.OptionParser(
+            prog        = argv[0],
+            usage       = '%prog: [options] --source <src> --destination <dst>',
+
+            # module docstring
+            # XXX: breaks multi-line descriptions..
+            description = __doc__,
+    )
+
+    # logging
+    general = optparse.OptionGroup(parser, "General Options")
+
+    general.add_option('-q', '--quiet',      dest='loglevel', action='store_const', const=logging.WARNING, help="Less output")
+    general.add_option('-v', '--verbose',    dest='loglevel', action='store_const', const=logging.INFO,  help="More output")
+    general.add_option('-D', '--debug',      dest='loglevel', action='store_const', const=logging.DEBUG, help="Even more output")
+
+    parser.add_option_group(general)
+
+    #
+    parser.add_option('-s', '--source',     metavar='RSYNC-PATH',
+        help="Backup source in rsync-syntax")
+
+    parser.add_option('-d', '--destination',    metavar='RSYNC-PATH',
+        help="Backup destination in rsync-syntax")
+
+    parser.add_option('--interval',         metavar='NAME', action='append', dest='intervals',
+        help="Enable given interval")
+
+    parser.add_option('--clean-intervals',  action='store_true',
+        help="Clean out old interval links")
+
+    parser.add_option('--clean-snapshots',  action='store_true',
+        help="Clean out unused snapshots (those not linked to)")
+
+    parser.add_option('--clean',             action='store_true',
+        help="Clean out both intervals and snapshots")
+
+    parser.add_option('-n', '--dry-run',    action='store_true',
+        help="Don't actually clean anything")
+
+    # defaults
+    parser.set_defaults(
+        loglevel    = logging.WARNING,
+        
+        snapshot_format = '%Y%m%d-%H%M%S',
+
+        ## XXX: configure somehow
+        # rsync options, in invoke.optargs format
+        rsync_options = {
+            'archive':          True,
+            'hard-links':       True,
+            'one-file-system':  True,
+            'numeric-ids':      True,
+            'delete':           True,
+        },
+
+        # datetime formats for intervals
+        interval_format = {
+            'all':      None,       # default to snapshot_format
+            'day':      '%Y-%m-%d',
+            'week':     '%Y-%W',
+            'month':    '%Y-%m',
+            'year':     '%Y',
+        },
+
+        # retention for intervals
+        interval_retention = {
+            'all':      4,
+            'day':      7,
+            'week':     4,
+            'month':    4,
+            'year':     1,
+        },
+
+        # selected intervals
+        intervals       = [],
+    )
+
+    # parse
+    options, args = parser.parse_args(argv[1:])
+
+    # validate
+    if not options.destination :
+        parser.error("--destination is required")
+
+    # configure
+    logging.basicConfig(
+        format  = '%(processName)s: %(name)s: %(levelname)s %(funcName)s : %(message)s',
+        level   = options.loglevel,
+    )
+
+    if options.clean :
+        options.clean_intervals = options.clean_snapshots = options.clean
+
+    return options, args
+
+def run_snapshot (options) :
+    """
+        Perform the rsync from source to given path.
+    """
+
+    snapshot_dir = os.path.join(options.destination, 'snapshots')
+
+    if not os.path.exists(snapshot_dir) :
+        log.warn("Creating snapshots dir: %s", snapshot_dir)
+        os.mkdir(snapshot_dir)
+    
+    # new snapshot
+    snapshot_name = options.now.strftime(options.snapshot_format)
+    snapshot_path = os.path.join(snapshot_dir, snapshot_name)
+    temp_path = os.path.join(snapshot_dir, 'new')
+
+    if os.path.exists(temp_path) :
+        raise Exception("Old temp snapshot dir remains, please clean up: {path}".format(path=temp_path))
+
+    log.info("Perform main snapshot: %s", snapshot_path)
+
+    # build rsync options
+    opts = dict(options.rsync_options)
+
+    if os.path.exists(options.current_path) :
+        # use as link-dest base; hardlinks unchanged files
+        opts['link-dest'] = options.current_path
+
+    # go
+    log.debug("rsync %s -> %s", options.source, temp_path)
+    rsync.rsync(options.source, temp_path, **opts)
+
+    # move in to final name
+    log.debug("rename %s -> %s", temp_path, snapshot_path)
+    os.rename(temp_path, snapshot_path)
+
+    return snapshot_name
+
+def update_interval (options, snapshot_name, interval) :
+    """
+        Update the interval/... links
+    """
+
+    dir_path = os.path.join(options.destination, interval)
+
+    if not os.path.exists(dir_path) :
+        log.warn("Creating interval dir: %s", dir_path)
+        os.mkdir(dir_path)
+    
+    # format code
+    name_fmt = options.interval_format[interval]
+
+    if name_fmt is None :
+        # keep all snapshots
+        name_fmt = options.snapshot_format
+
+    # name
+    name = options.now.strftime(name_fmt)
+
+    # path
+    path_name = os.path.join(interval, name)
+    path = os.path.join(options.destination, path_name)
+
+    log.debug("processing %s", path_name)
+
+    # already there?
+    if os.path.exists(path) :
+        target = os.readlink(path)
+
+        log.info("Found existing %s: %s -> %s", interval, name, target)
+
+    else :
+        # update
+        target = os.path.join('..', 'snapshots', snapshot_name)
+
+        log.info("Updating %s: %s -> %s", interval, name, target)
+        log.debug("%s -> %s", path, target)
+
+        os.symlink(target, path)
+
+
+def clean_interval (options, interval) :
+    """
+        Clean out old entries from interval dir.
+    """
+
+    # path
+    dir_path = os.path.join(options.destination, interval)
+
+    if not os.path.exists(dir_path) :
+        log.warn("%s: Skipping, no interval dir: %s", interval, dir_path)
+        return
+
+    # configured
+    retention = options.interval_retention[interval]
+
+    # clean?
+    items = os.listdir(dir_path)
+    items.sort()
+
+    log.info("%s: Have %d / %d items", interval, len(items), retention)
+    log.debug("%s: items: %s", interval, ' '.join(items))
+
+    if len(items) > retention :
+        # clean out
+        clean = items[retention:]
+
+        log.info("%s: Cleaning out %d items", interval, len(clean))
+        log.debug("%s: cleaning out: %s", interval, ' '.join(clean))
+
+        for item in clean :
+            path = os.path.join(dir_path, item)
+
+            log.info("%s: Clean: %s", interval, path)
+
+            os.unlink(path)
+
+def walk_symlinks (tree, ignore=False) :
+    """
+        Walk through all symlinks in given dir, yielding:
+
+            (dirpath, name, target)
+
+        Passes through errors from os.listdir/os.lstat.
+    """
+
+    for name in os.listdir(tree) :
+        if ignore and name in ignore :
+            log.debug("%s: ignore: %s", tree, name)
+            continue
+
+        path = os.path.join(tree, name)
+        
+        # stat symlink itself
+        st = os.lstat(path)
+
+        if stat.S_ISDIR(st.st_mode) :
+            # recurse
+            log.debug("%s: tree: %s", tree, name)
+
+            for item in walk_symlinks(path) :
+                yield item
+
+        elif stat.S_ISLNK(st.st_mode) :
+            # found
+            target = os.readlink(path)
+
+            log.debug("%s: link: %s -> %s", tree, name, target)
+
+            yield tree, name, target
+
+        else :
+            log.debug("%s: skip: %s", tree, name)
+
+
+def clean_snapshots (options) :
+    """
+        Clean out all snapshots not linked to from within dest.
+
+        Fails without doing anything if unable to read the destination dir.
+    """
+
+    # real path to snapshots
+    snapshots_path = os.path.realpath(os.path.abspath(os.path.join(options.destination, 'snapshots')))
+    log.debug("real snapshots_path: %s", snapshots_path)
+
+    # set of found targets
+    found = set()
+
+    # walk all symlinks
+    for dirpath, name, target in walk_symlinks(options.destination, ignore=set(['snapshots'])) :
+        # target dir
+        target_path = os.path.realpath(os.path.join(dirpath, target))
+        target_dir = os.path.dirname(target_path)
+        target_name = os.path.basename(target_path)
+
+        if target_dir == snapshots_path :
+            log.debug("%s: found: %s -> %s", dirpath, name, target_name)
+            found.add(target_name)
+
+        else :
+            log.debug("%s: ignore: %s -> %s", dirpath, name, target_path)
+
+    # discover all snapshots
+    snapshots = set(os.listdir(snapshots_path))
+
+    # clean out special names
+    snapshots = snapshots - set(['new'])
+
+    ## compare
+    used = snapshots & found
+    unused = snapshots - found
+    broken = found - snapshots
+
+    log.info("Found used=%d, unused=%d, broken=%d snapshot symlinks", len(used), len(unused), len(broken))
+    log.debug("used=%s, unused=%s", used, unused)
+
+    if broken :
+        log.warn("Found broken symlinks to snapshots: %s", ' '.join(broken))
+    
+    if unused :
+        log.info("Clean out unused snapshots: %s", ' '.join(unused))
+
+        for name in unused :
+            path = os.path.join(snapshots_path, name)
+
+            log.info("Clean: %s", name)
+
+            if not options.dry_run :
+                log.debug("rmtree: %s", path)
+
+                # nuke
+                shutil.rmtree(path)
+
+            else :
+                log.debug("dry-run: %s", path)
+
+def run (options) :
+    """
+        Perform the current snapshot
+    """
+
+    # timestamp for run
+    options.now = datetime.datetime.now()
+
+    # snapshot from source?
+    if options.source :
+        # base snapshot (symlink)
+        options.current_path = os.path.join(options.destination, 'current')
+
+        log.info("Started snapshot run at: %s", options.now)
+
+        # initial rsync
+        snapshot_name = run_snapshot(options)
+
+        # update current
+        log.info("Updating current -> %s", snapshot_name)
+
+        if os.path.islink(options.current_path) :
+            # replace
+            os.unlink(options.current_path)
+
+        os.symlink(os.path.join('snapshots', snapshot_name), options.current_path)
+
+        # intervals?
+        if not options.intervals :
+            log.info("No --intervals given; not running any")
+
+        else :
+            # maintain intervals
+            log.info("Running intervals: %s", options.intervals)
+
+            for interval in options.intervals :
+                log.debug("%s", interval)
+
+                # update
+                update_interval(options, snapshot_name, interval)
+
+    # clean intervals?
+    if options.clean_intervals:
+        for interval in options.intervals :
+            log.info("Cleaning interval: %s...", interval)
+
+            clean_interval(options, interval)
+
+    # clean snapshots?
+    if options.clean_snapshots :
+        log.info("Cleaning snapshots...")
+
+        clean_snapshots(options)
+
+    # ok
+    return 1
+
+def main (argv) :
+    global options
+
+    # global options + args
+    options, args = parse_options(argv)
+
+    # XXX: args?
+    if args :
+        log.error("No arguments are handled")
+        return 2
+
+    try :
+        # handle it
+        return run(options)
+
+    except Exception, e:
+        log.error("Internal error:", exc_info=e)
+        return 3
+
+    # ok
+    return 0
+
+
+
+if __name__ == '__main__' :
+    import sys
+
+    sys.exit(main(sys.argv))
+

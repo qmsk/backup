@@ -45,17 +45,56 @@ def invoke (cmd, args, data=None) :
 
     return stdout
 
+def process_opt (opt, value) :
+    """
+        Mangle from python keyword-argument dict format to command-line option tuple format.
+
+        >>> process_opt('foo', True)
+        ('--foo',)
+        >>> process_opt('foo', False)
+        ()
+        >>> process_opt('foo', 2)
+        ('--foo', '2')
+        >>> process_opt('foo', 'bar')
+        ('--foo', 'bar')
+        >>> process_opt('foo_bar', 'asdf')
+        ('--foo-bar', 'asdf')
+
+        # XXX: weird?
+        >>> process_opt('bar', '')
+        ('--bar', '')
+
+        Returns a tuple of argv items.
+    """
+
+    # mangle opt
+    opt = '--' + opt.replace('_', '-')
+
+    if value is True :
+        # flag opt
+        return (opt, )
+
+    elif value is False or value is None:
+        # flag opt / omit
+        return ( )
+
+    else :
+        # as-is
+        return (opt, str(value))
+
 def optargs (*args, **kwargs) :
     """
         Convert args/options into command-line format
     """
 
+    ## opts
     # process
-    opts = [('--{opt}'.format(opt=opt), value if value != True else None) for opt, value in kwargs.iteritems() if value]
+    opts = [process_opt(opt, value) for opt, value in kwargs.iteritems()]
 
     # flatten
     opts = [str(opt_part) for opt_parts in opts for opt_part in opt_parts if opt_part]
 
+    ## args
     args = [str(arg) for arg in args if arg]
 
     return opts + args
@@ -71,4 +110,8 @@ def command (cmd, *args, **opts) :
 
     # invoke
     return invoke(cmd, optargs(*args, **opts))
- 
+
+if __name__ == '__main__':
+    import doctest
+    doctest.testmod()
+
