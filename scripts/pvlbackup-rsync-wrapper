@@ -1,5 +1,9 @@
 #!/usr/bin/python
 
+"""
+    SSH authorized_keys command="..." wrapper for rsync.
+"""
+
 from pvl.backup.rsync import RSyncCommandFormatError
 from pvl.backup.invoke import InvokeError
 from pvl.backup import rsync
@@ -18,23 +22,31 @@ def parse_options (argv) :
         Parse command-line arguments.
     """
 
+    parser = optparse.OptionParser(
+            prog        = argv[0],
 
-    parser = optparse.OptionParser()
+            # module docstring
+            description = __doc__,
+    )
 
     # logging
-    parser.add_option('-q', '--quiet',      dest='loglevel', action='store_const', const=logging.WARNING, help="Less output")
-    parser.add_option('-v', '--verbose',    dest='loglevel', action='store_const', const=logging.INFO,  help="More output")
-    parser.add_option('-D', '--debug',      dest='loglevel', action='store_const', const=logging.DEBUG, help="Even more output")
+    general = optparse.OptionGroup(parser, "General Options")
 
-    # 
-    parser.add_option('-c', '--command',    default=os.environ.get('SSH_ORIGINAL_COMMAND'),
+    general.add_option('-q', '--quiet',      dest='loglevel', action='store_const', const=logging.WARNING, help="Less output")
+    general.add_option('-v', '--verbose',    dest='loglevel', action='store_const', const=logging.INFO,  help="More output")
+    general.add_option('-D', '--debug',      dest='loglevel', action='store_const', const=logging.DEBUG, help="Even more output")
+
+    parser.add_option_group(general)
+
+    #
+    parser.add_option('-c', '--command',    metavar='CMD', default=os.environ.get('SSH_ORIGINAL_COMMAND'),
             help="rsync command to execute")
 
     parser.add_option('-R', '--readonly',   action='store_true', default=False,
-            help="restrict to read operations")
+            help="restrict to read/source mode")
 
-    parser.add_option('-P', '--restrict-path', default=False,
-            help="restrict to given path")
+    parser.add_option('-P', '--restrict-path', metavar='PATH', default=False,
+            help="restrict to given path prefix")
 
     # defaults
     parser.set_defaults(
@@ -55,12 +67,13 @@ def parse_options (argv) :
 def rsync_wrapper (command, restrict='lvm:') :
     """
         Wrap given rsync command.
-        
-        Backups the LVM LV given in the rsync command.
+
+        Parses the command, the source path, and then executes rsync within the source path (which may be a special
+        pseudo-path with additional handling).
     """
 
     try :
-        # parse
+        # parse the rsync command sent by the client
         rsync_cmd, rsync_options, source_path, dest_path = rsync.parse_command(command, 
                 restrict_readonly   = options.readonly,
             )
@@ -73,7 +86,7 @@ def rsync_wrapper (command, restrict='lvm:') :
     path = dest_path
 
     try :
-        # parse source
+        # parse the source path as given by the client, may be a real path or pseudo-path
         source = rsync.parse_source(path,
                 restrict_path       = options.restrict_path,
             )
@@ -83,7 +96,7 @@ def rsync_wrapper (command, restrict='lvm:') :
         return 2
 
     try :
-        # run
+        # run rsync within the source (may perform additional stuff like snapshotting...)
         source.execute(rsync_options)
 
     except InvokeError, e:
@@ -94,10 +107,6 @@ def rsync_wrapper (command, restrict='lvm:') :
     return 0
 
 def main (argv) :
-    """
-        SSH authorized_keys command="..." wrapper for rsync.
-    """
-
     global options
 
     # global options + args
