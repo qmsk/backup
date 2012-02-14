@@ -16,7 +16,7 @@ class InvokeError (Exception) :
         self.exit = exit
 
     def __str__ (self) :
-        raise Exception("{cmd} failed: {exit}".format(cmd=self.cmd, exit=self.exit))
+        return "{cmd} failed: {exit}".format(cmd=self.cmd, exit=self.exit)
 
 def invoke (cmd, args, data=None) :
     """
