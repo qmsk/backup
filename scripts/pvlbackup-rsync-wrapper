@@ -58,7 +58,7 @@ def parse_options (argv) :
 
     # configure
     logging.basicConfig(
-        format  = '%(processName)s: %(name)s: %(levelname)s %(funcName)s : %(message)s',
+        format  = '%(levelname)6s %(name)s : %(funcName)s : %(message)s',
         level   = options.loglevel,
     )
 
