@@ -26,7 +26,7 @@ def invoke (cmd, args, data=None) :
         Returns stdout.
     """
     
-    log.debug("cmd={cmd}, args={args}".format(cmd=cmd, args=args))
+    log.debug("{cmd} {args}".format(cmd=cmd, args=' '.join(args)))
 
     if data is False :
         # keep process stdin/out
