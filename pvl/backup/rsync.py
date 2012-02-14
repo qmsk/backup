@@ -31,7 +31,7 @@ class RSyncSource (object) :
             Underlying rsync just reads from filesystem.
         """
 
-        invoke(self.RSYNC, options + [path, '.'], data=False)
+        invoke(self.RSYNC, options + ['.', path], data=False)
 
 class RSyncFSSource (RSyncSource) :
     """
@@ -84,7 +84,8 @@ class RSyncLVMSource (RSyncSource) :
                 # rsync!
                 log.info("Running rsync: ...")
 
-                return self._execute(options, mountpoint.path)
+                # with trailing slash
+                return self._execute(options, mountpoint.path + '/')
 
             # cleanup
         # cleanup
