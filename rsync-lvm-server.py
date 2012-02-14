@@ -1,20 +1,29 @@
 #!/usr/bin/python
 
+import optparse, shlex
+
 import subprocess
 import os, os.path
 
 import contextlib
 import logging
 
-logging.basicConfig(
-    format  = '%(processName)s: %(name)s: %(levelname)s %(funcName)s : %(message)s',
-    level   = logging.DEBUG,
-)
 log = logging.getLogger()
 
-def invoke (cmd, args) :
+class InvokeError (Exception) :
+    def __init__ (self, cmd, exit) :
+        self.cmd = cmd
+        self.exit = exit
+
+    def __str__ (self) :
+        raise Exception("{cmd} failed: {exit}".format(cmd=self.cmd, exit=self.exit))
+
+def invoke (cmd, args, data=None) :
     """
         Invoke a command directly.
+        
+        data:       data to pass in on stdin, returning stdout.
+                    if given as False, passes through our process stdin/out
 
         Doesn't give any data on stdin, and keeps process stderr.
         Returns stdout.
@@ -22,13 +31,20 @@ def invoke (cmd, args) :
     
     log.debug("cmd={cmd}, args={args}".format(cmd=cmd, args=args))
 
-    p = subprocess.Popen([cmd] + args, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    if data is False :
+        # keep process stdin/out
+        io = None
+    else :
+        io = subprocess.PIPE
+
+    p = subprocess.Popen([cmd] + args, stdin=io, stdout=io)
 
     # get output
-    stdout, stderr = p.communicate(input=None)
+    stdout, stderr = p.communicate(input=data)
 
     if p.returncode :
-        raise Exception("{cmd} failed: {returncode}".format(cmd=cmd, returncode=p.returncode))
+        # failed
+        raise InvokeError(cmd, p.returncode)
 
     return stdout
 
@@ -119,11 +135,12 @@ class LVM (object) :
         snapshot = LVMSnapshot.create(self, base, **kwargs)
 
         try :
-            log.debug("got snapshot={0}".format(snapshot))
+            log.debug("got: {0}".format(snapshot))
             yield snapshot
 
         finally:
             # cleanup
+            # XXX: do we need to wait for it to get closed after mount?
             log.debug("cleanup: {0}".format(snapshot))
             snapshot.close()
 
@@ -328,30 +345,299 @@ def mount (dev, mnt, **kwargs) :
         log.debug("cleanup: %s", mount)
         mount.close()
 
+class RSyncCommandFormatError (Exception) :
+    """
+        Improper rsync command
+    """
+
+    pass
+
+def parse_rsync (command, restrict_server=True, restrict_readonly=True) :
+    """
+        Parse given rsync server command into bits. 
+
+            command             - the command-string sent by rsync
+            restrict_server     - restrict to server-mode
+            restrict_readonly   - restrict to read/send-mode
+        
+        Returns:
+
+            (cmd, options, source, dest)
+    """
+
+    # split
+    parts = shlex.split(command)
+
+    cmd = None
+    options = []
+    source = None
+    dest = None
+
+    # parse
+    for part in parts :
+        if cmd is None :
+            cmd = part
+
+        elif part.startswith('-') :
+            options.append(part)
+
+        elif source is None :
+            source = part
+
+        elif dest is None :
+            dest = part
+
+    # options
+    have_server = ('--server' in options)
+    have_sender = ('--sender' in options)
+
+    # verify
+    if not have_server :
+        raise RSyncCommandFormatError("Missing --server")
+
+    if restrict_readonly and not have_sender :
+        raise RSyncCommandFormatError("Missing --sender for readonly")
+
+    # parse path
+    if have_sender :
+        # read
+        # XXX: which way does the dot go?
+        if source != '.' :
+            raise RSyncCommandFormatError("Invalid dest for sender")
+        
+        path = dest
+
+    else :
+        # write
+        if source != '.' :
+            raise RSyncCommandFormatError("Invalid source for reciever")
+
+        path = dest
+
+    # ok
+    return cmd, options, source, dest
+
+class RSyncSource (object) :
+    RSYNC = '/usr/bin/rsync'
+
+    def _execute (self, options, path) :
+        """
+            Underlying rsync just reads from filesystem.
+        """
+
+        invoke(self.RSYNC, options + [path, '.'], data=False)
+
+class RSyncFSSource (RSyncSource) :
+    """
+        Normal filesystem backup.
+    """
+
+    def __init__ (self, path) :
+        RSyncSource.__init__(self)
+
+        self.path = path
+
+    def execute (self, options) :
+        return self._execute(options, self.path)
+
+class RSyncLVMSource (RSyncSource) :
+    """
+        Backup LVM LV by snapshotting + mounting it.
+    """
+
+    def __init__ (self, volume) :
+        RSyncSource.__init__(self)
+
+        self.volume = volume
+ 
+    def execute (self, options) :
+        """
+            Snapshot, mount, execute
+        """
+        
+        # backup target from LVM command
+        lvm = self.volume.lvm
+        volume = self.volume
+
+        # XXX: generate
+        path = '/mnt'
+
+        # snapshot
+        log.info("Open snapshot...")
+
+        # XXX: generate snapshot nametag to be unique?
+        with lvm.snapshot(volume, tag='backup') as snapshot:
+            log.info("Snapshot opened: %s", snapshot.lvm_path)
+
+            # mount
+            log.info("Mounting snapshot: %s -> %s", snapshot, path)
+
+            with mount(snapshot.dev_path, path) as mountpoint:
+                log.info("Mounted snapshot: %s", mountpoint)
+                
+                # rsync!
+                log.info("Running rsync: ...")
+
+                return self._execute(options, mountpoint.path)
+
+            # cleanup
+        # cleanup
+       
+def rsync_source (path, restrict_path=False) :
+    """
+        Figure out source to rsync from, based on pseudo-path given in rsync command.
+    """
+        
+    # normalize
+    path = os.path.normpath(path)
+
+    # verify path
+    if restrict_path :
+        if not path.startswith(restrict_path) :
+            raise RSyncCommandFormatError("Restricted path ({restrict})".format(restrict=restrict_path))
+
+    if path.startswith('/') :
+        # direct filesystem path
+        # XXX: how to handle=
+        log.info("filesystem: %s", path)
+
+        return RSyncFSSource(path)
+
+    elif path.startswith('lvm:') :
+        # LVM LV
+        try :
+            lvm, vg, lv = path.split(':')
+
+        except ValueError, e:
+            raise RSyncCommandFormatError("Invalid lvm pseudo-path: {error}".format(error=e))
+        
+        # XXX: validate
+
+        log.info("LVM: %s/%s", vg, lv)
+
+        # open
+        lvm = LVM(vg)
+        volume = lvm.volume(lv)
+
+        return RSyncLVMSource(volume)
+       
+    else :
+        # invalid
+        raise RSyncCommandFormatError("Unrecognized backup path")
+
+# command-line options
+options = None
+
+def parse_options (argv) :
+    """
+        Parse command-line arguments.
+    """
+
+
+    parser = optparse.OptionParser()
+
+    # logging
+    parser.add_option('-q', '--quiet',      dest='loglevel', action='store_const', const=logging.WARNING, help="Less output")
+    parser.add_option('-v', '--verbose',    dest='loglevel', action='store_const', const=logging.INFO,  help="More output")
+    parser.add_option('-D', '--debug',      dest='loglevel', action='store_const', const=logging.DEBUG, help="Even more output")
+
+    # 
+    parser.add_option('-c', '--command',    default=os.environ.get('SSH_ORIGINAL_COMMAND'),
+            help="rsync command to execute")
+
+    parser.add_option('-R', '--readonly',   action='store_true', default=False,
+            help="restrict to read operations")
+
+    parser.add_option('-P', '--restrict-path', default=False,
+            help="restrict to given path")
+
+    # defaults
+    parser.set_defaults(
+        loglevel    = logging.WARNING,
+    )
+
+    # parse
+    options, args = parser.parse_args(argv[1:])
+
+    # configure
+    logging.basicConfig(
+        format  = '%(processName)s: %(name)s: %(levelname)s %(funcName)s : %(message)s',
+        level   = options.loglevel,
+    )
+
+    return options, args
+
+
+def rsync_wrapper (command, restrict='lvm:') :
+    """
+        Wrap given rsync command.
+        
+        Backups the LVM LV given in the rsync command.
+    """
+
+    try :
+        # parse
+        rsync_cmd, rsync_options, source_path, dest_path = parse_rsync(command, 
+                restrict_readonly   = options.readonly,
+            )
+
+    except RSyncCommandFormatError, e:
+        log.error("invalid rsync command: %r: %s", command, e)
+        return 2
+
+    # XXX: the real path is always given second..
+    path = dest_path
+
+    try :
+        # parse source
+        source = rsync_source(path,
+                restrict_path       = options.restrict_path,
+            )
+
+    except RSyncCommandFormatError, e:
+        log.error("invalid rsync source: %r: %s", path, e)
+        return 2
+
+    try :
+        # run
+        source.execute(rsync_options)
+
+    except InvokeError, e:
+        log.error("%s failed: %d", e.cmd, e.exit)
+        return e.exit
+
+    # ok
+    return 0
+
 def main (argv) :
-    # LVM VolumeGroup to manipulate
-    lvm = LVM('asdf')
+    """
+        SSH authorized_keys command="..." wrapper for rsync.
+    """
 
-    # XXX: get backup target from rsync command
-    backup_lv = lvm.volume('test')
-    backup_path = '/mnt'
+    global options
 
-    # snapshot
-    log.info("Open snapshot...")
+    # global options + args
+    options, args = parse_options(argv)
 
-    with lvm.snapshot(backup_lv, tag='backup') as snapshot:
-        log.info("Snapshot opened: {name}".format(name=snapshot.lvm_path))
+    # args
+    if args :
+        log.error("No arguments are handled")
+        return 2
 
-        # mount
-        log.info("Mounting snapshot: %s -> %s", snapshot, backup_path)
+    if not options.command:
+        log.error("SSH_ORIGINAL_COMMAND not given")
+        return 2
 
-        with mount(snapshot.dev_path, backup_path) as mountpoint:
-            log.info("Mounted snapshot: %s", mountpoint)
+    try :
+        # handle it
+        return rsync_wrapper(options.command)
 
-            # ...
-            print command('ls', '-l', mountpoint.path)
+    except Exception, e:
+        log.error("Internal error:", exc_info=e)
+        return 3
 
-    return 1
+    # ok
+    return 0
 
 if __name__ == '__main__' :
     import sys
