@@ -151,6 +151,9 @@ def parse_command (command, restrict_server=True, restrict_readonly=True) :
 
         path = dest
 
+    if not path :
+        raise RSyncCommandFormatError("Missing path")
+
     # ok
     return cmd, options, source, dest
 
