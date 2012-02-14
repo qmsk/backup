@@ -46,6 +46,17 @@ def parse_options (argv) :
 
     parser.add_option_group(general)
 
+    # rsync
+    rsync = optparse.OptionGroup(parser, "rsync Options")
+
+    rsync.add_option('--exclude-from',       metavar='FILE',
+        help="Read exclude rules from given file")
+
+    rsync.add_option('--include-from',       metavar='FILE',
+        help="Read include rules from given file")
+
+    parser.add_option_group(rsync)
+
     #
     parser.add_option('-s', '--source',     metavar='RSYNC-PATH',
         help="Backup source in rsync-syntax")
@@ -86,7 +97,7 @@ def parse_options (argv) :
 
         # datetime formats for intervals
         interval_format = {
-            'all':      None,       # default to snapshot_format
+            'recent':   None,       # default to snapshot_format
             'day':      '%Y-%m-%d',
             'week':     '%Y-%W',
             'month':    '%Y-%m',
@@ -95,7 +106,7 @@ def parse_options (argv) :
 
         # retention for intervals
         interval_retention = {
-            'all':      4,
+            'recent':   4,
             'day':      7,
             'week':     4,
             'month':    4,
@@ -121,6 +132,12 @@ def parse_options (argv) :
 
     if options.clean :
         options.clean_intervals = options.clean_snapshots = options.clean
+
+    if options.include_from :
+        options.rsync_options['include-from'] = options.include_from
+
+    if options.exclude_from :
+        options.rsync_options['exclude-from'] = options.exclude_from
 
     return options, args
 
@@ -149,8 +166,16 @@ def run_snapshot (options) :
     opts = dict(options.rsync_options)
 
     if os.path.exists(options.current_path) :
-        # use as link-dest base; hardlinks unchanged files
-        opts['link-dest'] = options.current_path
+        # real path to target
+        target = os.readlink(options.current_path)
+        target_path = os.path.join(os.path.dirname(options.current_path), target)
+        target_abs = os.path.abspath(target_path)
+
+        log.info("Using current -> %s as base", target_path)
+
+        # use as link-dest base; hardlinks unchanged files; target directory must be empty
+        # rsync links absolute paths..
+        opts['link-dest'] = target_abs
 
     # go
     log.debug("rsync %s -> %s", options.source, temp_path)
@@ -193,13 +218,13 @@ def update_interval (options, snapshot_name, interval) :
     if os.path.exists(path) :
         target = os.readlink(path)
 
-        log.info("Found existing %s: %s -> %s", interval, name, target)
+        log.info("%s: Found existing: %s -> %s", interval, name, target)
 
     else :
         # update
         target = os.path.join('..', 'snapshots', snapshot_name)
 
-        log.info("Updating %s: %s -> %s", interval, name, target)
+        log.info("%s: Updating: %s -> %s", interval, name, target)
         log.debug("%s -> %s", path, target)
 
         os.symlink(target, path)
@@ -349,6 +374,19 @@ def run (options) :
     # timestamp for run
     options.now = datetime.datetime.now()
 
+    # clean intervals?
+    if options.clean_intervals:
+        for interval in options.intervals :
+            log.info("Cleaning interval: %s...", interval)
+
+            clean_interval(options, interval)
+
+    # clean snapshots?
+    if options.clean_snapshots :
+        log.info("Cleaning snapshots...")
+
+        clean_snapshots(options)
+
     # snapshot from source?
     if options.source :
         # base snapshot (symlink)
@@ -374,26 +412,15 @@ def run (options) :
 
         else :
             # maintain intervals
-            log.info("Running intervals: %s", options.intervals)
+            log.info("Updating %d intervals...", len(options.intervals))
 
             for interval in options.intervals :
                 log.debug("%s", interval)
 
+                log.info("Updating interval: %s", interval)
+
                 # update
                 update_interval(options, snapshot_name, interval)
-
-    # clean intervals?
-    if options.clean_intervals:
-        for interval in options.intervals :
-            log.info("Cleaning interval: %s...", interval)
-
-            clean_interval(options, interval)
-
-    # clean snapshots?
-    if options.clean_snapshots :
-        log.info("Cleaning snapshots...")
-
-        clean_snapshots(options)
 
     # ok
     return 1
