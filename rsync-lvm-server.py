@@ -12,135 +12,206 @@ logging.basicConfig(
 )
 log = logging.getLogger()
 
-LVM                 = '/sbin/lvm'
 LVM_VG              = 'asdf'
-LVM_SNAPSHOT_SIZE   = '5G'
 
-def lvm_name (vg, lv) :
+class LVM (object) :
     """
-        LVM vg/lv name.
-    """
-
-    return '{vg}/{lv}'.format(vg=vg, lv=lv)
-
-def lvm_path (vg, lv) :
-    """
-        Map LVM VG+LV to /dev path.
+        LVM VolumeGroup
     """
 
-    return '/dev/{vg}/{lv}'.format(vg=vg, lv=lv)
+    # path to lvm2 binary
+    LVM = '/sbin/lvm'
 
-def lvm_invoke (cmd, args) :
-    """
-        Invoke LVM command directly.
-
-        Doesn't give any data on stdin, and keeps process stderr.
-        Returns stdout.
-    """
     
-    log.debug("cmd={cmd}, args={args}".format(cmd=cmd, args=args))
+    # VG name
+    name = None
 
-    p = subprocess.Popen([LVM, cmd] + args, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    def __init__ (self, name) :
+        self.name = name
 
-    # get output
-    stdout, stderr = p.communicate(input=None)
+    def lv_name (self, lv) :
+        """
+            vg/lv name.
+        """
 
-    if p.returncode :
-        raise Exception("LVM ({cmd}) failed: {returncode}".format(cmd=cmd, returncode=p.returncode))
+        return '{vg}/{lv}'.format(vg=self.name, lv=lv)
 
-    return stdout
+    def lv_path (self, lv) :
+        """
+            /dev/vg/lv path.
+        """
 
-def lvm (cmd, *args, **opts) :
-    """
-        Invoke simple LVM command with options/arguments, and no output.
-    """
+        return '/dev/{vg}/{lv}'.format(vg=self.name, lv=lv)
 
-    log.debug("cmd={cmd}, opts={opts}, args={args}".format(cmd=cmd, args=args, opts=opts))
+    def invoke (self, cmd, args) :
+        """
+            Invoke LVM command directly.
 
-    # process
-    opts = [('--{opt}'.format(opt=opt), value if value != True else None) for opt, value in opts.iteritems() if value]
-
-    # flatten
-    opts = [str(opt_part) for opt_parts in opts for opt_part in opt_parts if opt_part]
-
-    args = [str(arg) for arg in args if arg]
-
-    # invoke
-    lvm_invoke(cmd, opts + args)
-
-def lvm_snapshot_create (vg, lv, size=LVM_SNAPSHOT_SIZE) :
-    """
-        Create a new LVM snapshot of the given LV.
+            Doesn't give any data on stdin, and keeps process stderr.
+            Returns stdout.
+        """
         
-        Returns a (snapshot_name, dev_path) tuple.
+        log.debug("cmd={cmd}, args={args}".format(cmd=cmd, args=args))
+
+        p = subprocess.Popen([self.LVM, cmd] + args, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+
+        # get output
+        stdout, stderr = p.communicate(input=None)
+
+        if p.returncode :
+            raise Exception("LVM ({cmd}) failed: {returncode}".format(cmd=cmd, returncode=p.returncode))
+
+        return stdout
+
+    def command (self, cmd, *args, **opts) :
+        """
+            Invoke simple LVM command with options/arguments, and no output.
+        """
+
+        log.debug("cmd={cmd}, opts={opts}, args={args}".format(cmd=cmd, args=args, opts=opts))
+
+        # process
+        opts = [('--{opt}'.format(opt=opt), value if value != True else None) for opt, value in opts.iteritems() if value]
+
+        # flatten
+        opts = [str(opt_part) for opt_parts in opts for opt_part in opt_parts if opt_part]
+
+        args = [str(arg) for arg in args if arg]
+
+        # invoke
+        self.invoke(cmd, opts + args)
+
+    def volume (self, name) :
+        """
+            Return an LVMVolume for given named LV.
+        """
+
+        return LVMVolume(self, name)
+
+    @contextlib.contextmanager
+    def snapshot (self, base, **kwargs) :
+        """
+            A Context Manager for handling an LVMSnapshot.
+
+            See LVMSnapshot.create()
+
+            with lvm.snapshot(lv) as snapshot : ...
+        """
+
+        log.debug("creating snapshot from {base}: {opts}".format(base=base, opts=kwargs))
+        snapshot = LVMSnapshot.create(self, base, **kwargs)
+
+        log.debug("got snapshot={0}".format(snapshot))
+        yield snapshot
+
+        log.debug("cleanup: {0}".format(snapshot))
+        snapshot.close()
+
+class LVMVolume (object) :
+    """
+        LVM Logical Volume.
     """
 
-    # path to device
-    lv_name = lvm_name(vg, lv)
-    lv_path = lvm_path(vg, lv)
+    # VG
+    lvm = None
 
-    # snapshot name
-    snap_lv = '{lv}-backup'.format(lv=lv)
-    snap_name = lvm_name(vg, snap_lv)
-    snap_path = lvm_path(vg, snap_lv)
+    # name
+    name = None
 
-    # verify LV exists
-    lvm('lvs', lv_name)
+    def __init__ (self, lvm, name) :
+        self.lvm = lvm
+        self.name = name
+
+    @property
+    def lvm_path (self) :
+        return self.lvm.lv_name(self.name)
+
+    @property
+    def dev_path (self) :
+        return self.lvm.lv_path(self.name)
+
+
+class LVMSnapshot (LVMVolume) :
+    """
+        LVM snapshot
+    """
     
-    if not os.path.exists(lv_path) :
-        raise Exception("lvm_snapshot: source LV does not exist: {path}".format(path=lv_path))
+    # default snapshot size
+    LVM_SNAPSHOT_SIZE   = '5G'
 
-    if os.path.exists(snap_path) :
-        raise Exception("lvm_snapshot: target LV snapshot already exists: {path}".format(path=snap_path))
+    # base lv
+    base = None
 
-    # create
-    lvm('lvcreate', lv_name, snapshot=True, name=snap_lv, size=size)
+    @classmethod
+    def create (cls, lvm, base, tag, size=LVM_SNAPSHOT_SIZE) :
+        """
+            Create a new LVM snapshot of the given LV.
+            
+            Returns a (snapshot_name, dev_path) tuple.
+        """
 
-    # verify
-    if not os.path.exists(snap_path) :
-        raise Exception("lvm_snapshot: target LV snapshot did not appear: {path}".format(path=snap_path))
+        # snapshot name
+        name = '{name}-{tag}'.format(name=base.name, tag=tag)
 
-    # yay
-    return snap_name, snap_path
+        # snapshot
+        snapshot = cls(lvm, base, name)
 
-def lvm_snapshot_remove (name) :
-    """
-        Remove given snapshot volume.
-    """
+        # verify LV exists
+        lvm.command('lvs', base.lvm_path)
+        
+        if not os.path.exists(base.dev_path) :
+            raise Exception("lvm_snapshot: source LV does not exist: {path}".format(path=base.dev_path))
 
-    # XXX: can't deactivate snapshot volume
-    #lvm('lvchange', name, available='n')
+        if os.path.exists(snapshot.dev_path) :
+            raise Exception("lvm_snapshot: target LV snapshot already exists: {path}".format(path=snapshot.dev_path))
 
-    # XXX: risky!
-    lvm('lvremove', '-f', name)
+        # create
+        snapshot.open()
 
-@contextlib.contextmanager
-def lvm_snapshot (*args, **kwargs) :
-    """
-        A Context Manager for handling an LVM snapshot.
+        # verify
+        if not os.path.exists(snapshot.dev_path) :
+            raise Exception("lvm_snapshot: target LV snapshot did not appear: {path}".format(path=snapshot.dev_path))
 
-        with lvm_snapshot(vg, lv) as (snapshot_name, snapshot_path) : ...
-    """
+        # yay
+        return snapshot
 
-    log.debug("creating snapshot: {0}".format(args))
-    name, path = lvm_snapshot_create(*args, **kwargs)
+    def __init__ (self, lvm, base, name, size=LVM_SNAPSHOT_SIZE) :
+        LVMVolume.__init__(self, lvm, name)
 
-    log.debug("got name={0}, path={1}".format(name, path))
-    yield name, path
+        self.base = base
+        self.size = size
 
-    log.debug("cleanup: {0}".format(name))
-    lvm_snapshot_remove(name)
+    def open (self) :
+        """
+            Create snapshot volume.
+        """
+
+        # create
+        self.lvm.command('lvcreate', self.base.lvm_path, snapshot=True, name=self.name, size=self.size)
+
+    def close (self) :
+        """
+            Remove snapshot volume.
+        """
+
+        # XXX: can't deactivate snapshot volume
+        #self.lvm.command('lvchange', name, available='n')
+
+        # XXX: risky!
+        self.lvm.command('lvremove', '-f', self.lvm_path)
 
 def main (argv) :
+    # LVM VolumeGroup to manipulate
+    lvm = LVM('asdf')
+
     # XXX: get LV from rsync command
-    lvm_vg='asdf'
-    backup_lv='test'
+    backup_lv = lvm.volume('test')
 
     # snapshot
     log.info("Open snapshot...")
 
-    with lvm_snapshot(lvm_vg, backup_lv) as (snapshot_name, snapshot_path):
-        log.info("Snapshot opened: {name}".format(name=snapshot_name))
+    with lvm.snapshot(backup_lv, tag='backup') as snapshot:
+        log.info("Snapshot opened: {name}".format(name=snapshot.lvm_path))
 
         # ...
 
