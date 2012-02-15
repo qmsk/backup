@@ -30,7 +30,7 @@ def parse_options (argv, defaults) :
 
     parser = optparse.OptionParser(
             prog        = argv[0],
-            usage       = '%prog: [options] --source <src> --destination <dst>',
+            usage       = '%prog: [options] [ --config <path> | --target <path> [ --source <src> ] [ --interval <name> ] ]',
 
             # module docstring
             # XXX: breaks multi-line descriptions..
@@ -74,21 +74,22 @@ def parse_options (argv, defaults) :
     parser.add_option('-c', '--config',     metavar='FILE',
         help="Load configuration file")
 
-
     #
-    parser.add_option('-s', '--source',     metavar='RSYNC-PATH',
-        help="Backup source in rsync-syntax")
+    parser.add_option('-T', '--target',    metavar='PATH',
+        help="Target path")
 
-    parser.add_option('-d', '--destination',    metavar='RSYNC-PATH',
-        help="Backup destination in rsync-syntax")
+    parser.add_option('-s', '--source',     metavar='RSYNC-PATH', dest='target_source', default=False,
+        help="Run target backup from source in rsync-syntax")
 
     parser.add_option('--interval',         metavar='NAME', action='append', dest='target_intervals',
-        help="Enable given interval")
+        help="Run target with given given interval(s)")
 
 
     # defaults
     parser.set_defaults(
-        loglevel    = logging.WARNING,
+        loglevel            = logging.WARNING,
+
+        target_intervals    = [],
     )
     parser.set_defaults(**defaults)
 
@@ -257,7 +258,7 @@ class Interval (object) :
             # partial instance with keep
             return cls(name,
                 format  = base.format,
-                keep    = config_int('keep', arg),
+                keep    = config_int('keep', arg) if arg else base.keep,
             )
 
     def __init__ (self, name, format, keep) :
@@ -286,7 +287,7 @@ class Target (object) :
         intervals       = None,
         rsync_options   = None,
     ) :
-        if not source :
+        if not source and source is not False :
             raise ConfigError("Missing required option: source for [target:{name}]".format(name=name))
 
         # global defaults
@@ -338,17 +339,25 @@ class Target (object) :
         # 'current' symlink
         self.current_path = os.path.join(self.path, 'current')
 
+    def prepare (self, options) :
+        """
+            Prepare dir for usage
+        """
+
+        if not os.path.exists(self.path) :
+            raise Exception("Missing target dir: {path}".format(path=self.path))
+
+        if not os.path.exists(self.snapshots_dir) :
+            log.warn("Creating snapshots dir: %s", self.snapshots_dir)
+            os.mkdir(self.snapshots_dir)
+
     def snapshot (self, options, now) :
         """
             Perform the rsync from our source to self.snapshot_dir.
 
             XXX: allocate snapshot_name here?
         """
-
-        if not os.path.exists(self.snapshots_dir) :
-            log.warn("Creating snapshots dir: %s", self.snapshots_dir)
-            os.mkdir(self.snapshots_dir)
-        
+       
         # new snapshot
         snapshot_name = now.strftime(options.snapshot_format)
         snapshot_path = os.path.join(self.snapshots_dir, snapshot_name)
@@ -574,6 +583,9 @@ class Target (object) :
             Execute
         """
 
+        # prep
+        self.prepare(options)
+
         # clean intervals?
         if options.clean_intervals:
             for interval in self.intervals :
@@ -606,7 +618,7 @@ class Target (object) :
     def __str__ (self) :
         return self.name
 
-def run (options) :
+def run (options, targets) :
     # default config
     config = dict(
         rsync_options   = {},
@@ -619,11 +631,11 @@ def run (options) :
         config = parse_config(options.config, config)
  
     # manual?
-    if options.destination :
-        config['targets']['<commandline>'] = dict(
-            path        = options.destination,
-            source      = options.source,
-            intervals   = options.target_intervals,
+    if options.target :
+        config['targets'][options.target] = dict(
+            path        = options.target,
+            source      = options.target_source,
+            intervals   = dict((name, None) for name in options.target_intervals),
         )
   
     # intervals
@@ -649,7 +661,12 @@ def run (options) :
         # store
         options.rsync_options[option] = value
 
-    for name in config['targets'] :
+    # all targets?
+    if not targets :
+        targets = list(config['targets'])
+
+    # targets
+    for name in targets :
         target_config = config['targets'][name]
 
         # parse
@@ -712,14 +729,13 @@ def main (argv) :
     # global options + args
     options, args = parse_options(argv, defaults)
 
-    # XXX: args?
-    if args :
-        log.error("No arguments are handled")
-        return 2
+    # args: filter targets
+    # XXX: fix name mangling
+    targets = [target.replace('-', '_') for target in args]
 
     try :
         # handle it
-        return run(options)
+        return run(options, targets)
 
     except Exception, e:
         log.error("Internal error:", exc_info=e)
