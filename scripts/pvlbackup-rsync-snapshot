@@ -245,6 +245,21 @@ class Interval (object) :
             keep    = config_int('keep', keep),
         )
 
+    @classmethod
+    def from_target_config (cls, name, base, arg) :
+        if isinstance(arg, dict) :
+            # full instance
+            return cls(name,
+                format  = arg.get('format', base.format if base else None),
+                keep    = arg.get('keep', base.keep if base else None),
+            )
+        else :
+            # partial instance with keep
+            return cls(name,
+                format  = base.format,
+                keep    = config_int('keep', arg),
+            )
+
     def __init__ (self, name, format, keep) :
         self.name = name
         self.format = format
@@ -265,10 +280,10 @@ class Target (object) :
         path            = False,
         source          = None,
         enable          = 'no',
-        intervals       = None,
         exclude_from    = None,
 
         # subsections
+        intervals       = None,
         rsync_options   = None,
     ) :
         if not source :
@@ -282,7 +297,12 @@ class Target (object) :
             _rsync_options.update(rsync_options)
 
         # lookup intervals
-        _intervals = [options.intervals[name] for name in config_list('intervals', intervals)]
+        _intervals = [
+            (
+                # lookup base from options.intervals
+                Interval.from_target_config(name, options.intervals.get(name), arg)
+            ) for name, arg in intervals.iteritems()
+        ]
 
         return cls(name, 
             path            = path if path else name,
