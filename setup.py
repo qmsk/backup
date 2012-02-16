@@ -3,7 +3,7 @@ from distutils.core import setup
 
 setup(
     name            = 'pvl.backup',
-    version         = '0.2',
+    version         = '0.2.1',
 
     url             = 'http://hg.qmsk.net/pvl-backup/',
     author          = 'Tero Marttila',

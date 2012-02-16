@@ -146,15 +146,17 @@ def parse_config (path, defaults) :
         # subsections
         section_path = section_name.split(':')
 
-        # lookup dict
+        # lookup section dict from config
         lookup = config
 
+        # XXX: sections are not in order, so we can't rely on the parent section being created before we handle the sub-section
         for name in section_path :
+            # possibly create
             if name not in lookup :
                 lookup[name] = {}
-            
-            lookup = lookup[name]
 
+            lookup = lookup[name]
+ 
         # found dict for this section
         config_section = lookup
 
@@ -377,7 +379,7 @@ class Target (object) :
         if os.path.exists(temp_path) :
             raise Exception("Old temp snapshot dir remains, please clean up: {path}".format(path=temp_path))
 
-        log.info("Perform main snapshot: %s", snapshot_path)
+        log.info("Perform main snapshot: %s -> %s", self.source, snapshot_path)
 
         # build rsync options
         opts = dict(self.rsync_options)
@@ -639,7 +641,11 @@ def run (options, targets) :
 
     if options.config :
         # load
-        config = parse_config(options.config, config)
+        try :
+            config = parse_config(options.config, config)
+        except ConfigError as e:
+            log.error("Configuration error: %s: %s", options.config, e)
+            return 2
  
     # manual?
     if options.target :
@@ -672,9 +678,19 @@ def run (options, targets) :
         # store
         options.rsync_options[option] = value
 
-    # all targets?
+    # what targets?
     if not targets :
+        # default to all defined targets
         targets = list(config['targets'])
+    
+    else :
+        # given ones, but verify they exist
+        for target in targets :
+            if target not in config['targets'] :
+                log.error("Unknown target given: %s", target)
+                log.info("Defined targets: %s", ' '.join(config['targets']))
+
+                return 2
 
     # targets
     for name in targets :
@@ -687,6 +703,9 @@ def run (options, targets) :
 
         # run
         target.run(options)
+
+    # ok
+    return 0
 
 def config_defaults () :
     return dict(
