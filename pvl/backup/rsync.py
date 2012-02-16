@@ -90,7 +90,7 @@ class RSyncLVMServer (RSyncServer) :
             # mount
             log.info("Mounting snapshot: %s -> %s", snapshot, path)
 
-            with mount(snapshot.dev_path, path) as mountpoint:
+            with mount(snapshot.dev_path, path, readonly=True) as mountpoint:
                 log.info("Mounted snapshot: %s", mountpoint)
                 
                 # rsync!
