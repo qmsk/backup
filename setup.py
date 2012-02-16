@@ -6,7 +6,7 @@ setup(
     version     = '0.1',
 
     # code
-    packages    = ['pvl.backup'],
+    packages    = ['pvl', 'pvl.backup'],
 
     # binaries
     scripts     = ['scripts/pvlbackup-rsync-wrapper'],
