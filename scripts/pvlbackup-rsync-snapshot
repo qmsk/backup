@@ -87,7 +87,7 @@ def parse_options (argv, defaults) :
 
     # defaults
     parser.set_defaults(
-        loglevel            = logging.WARNING,
+        loglevel            = logging.INFO,
 
         target_intervals    = [],
     )
@@ -113,6 +113,10 @@ def parse_options (argv, defaults) :
         options.rsync_options['exclude-from'] = options.exclude_from
 
     return options, args
+
+## Configuration
+class ConfigError (Exception) :
+    pass
 
 def process_config_name (name) :
     """
@@ -167,15 +171,19 @@ def parse_config (path, defaults) :
 
     return config
 
-def config_bool (name, value) :
+def config_bool (name, value, strict=True) :
     if value.lower() in ('yes', 'true', '1', 'on') :
         return True
 
     elif value.lower() in ('no', 'false', '0', 'off') :
         return False
 
-    else :
+    elif strict :
         raise ConfigError("Unrecognized boolean value: {name} = {value}".format(name=name, value=value))
+
+    else :
+        # allow non-boolean values
+        return value
 
 def config_int (name, value) :
     try :
@@ -295,7 +303,10 @@ class Target (object) :
 
         if rsync_options :
             # override
-            _rsync_options.update(rsync_options)
+            _rsync_options.update([
+                # parse
+                (option, config_bool(option, value, strict=False)) for option, value in rsync_options.iteritems()
+            ])
 
         # lookup intervals
         _intervals = [
@@ -645,7 +656,7 @@ def run (options, targets) :
         # parse
         interval = Interval.from_config(options, name, **interval_config)
         
-        log.info("Interval: %s", name)
+        log.debug("config interval: %s", name)
         
         # store
         options.intervals[name] = interval
@@ -653,8 +664,8 @@ def run (options, targets) :
     for option in config['rsync_options'] :
         value = config['rsync_options'][option]
 
-        # parse
-        value = config_bool(option, value)
+        # parse, allowing non-boolean values as well...
+        value = config_bool(option, value, strict=False)
 
         log.debug("rsync option: %s=%s", option, value)
 
@@ -672,7 +683,7 @@ def run (options, targets) :
         # parse
         target = Target.from_config(options, name, **target_config)
 
-        log.info("Target: %s", name)
+        log.info("Config target: %s", name)
 
         # run
         target.run(options)
