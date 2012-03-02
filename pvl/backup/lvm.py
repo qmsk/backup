@@ -77,8 +77,15 @@ class LVM (object) :
             yield snapshot
 
         finally:
-            # cleanup
             # XXX: there's some timing bug with an umount leaving the LV open, do we need to wait for it to get closed after mount?
+            #       https://bugzilla.redhat.com/show_bug.cgi?id=577798
+            #       some udev event bug, possibly fixed in lvm2 2.02.86?
+            # try to just patiently wait for it to settle down... if this isn't enough, we need some dmremove magic
+            log.debug("cleanup: waiting for snapshot volume to settle...")
+            import time
+            time.sleep(1)
+
+            # cleanup
             log.debug("cleanup: {0}".format(snapshot))
             snapshot.close()
 
