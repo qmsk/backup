@@ -194,7 +194,11 @@ def config_bool (name, value, strict=True) :
         # allow non-boolean values
         return value
 
-def config_int (name, value) :
+def config_int (name, value, default=False) :
+    if not value and default is not False:
+        # returning default value if one is given
+        return default
+
     try :
         return int(value)
 
@@ -250,7 +254,9 @@ class Interval (object) :
     @classmethod
     def from_config (cls, options, name,
         format,
-        keep,
+
+        # deprecated
+        keep    = None,
     ) :
         if not format :
             # magic to use snapshot name
@@ -260,7 +266,7 @@ class Interval (object) :
 
         return cls(name, 
             format  = _format, 
-            keep    = config_int('keep', keep),
+            keep    = config_int('keep', keep, default=None),
         )
 
     @classmethod
@@ -328,6 +334,9 @@ class Target (object) :
                 # parse
                 (option, config_bool(option, value, strict=False)) for option, value in rsync_options.iteritems()
             ])
+
+        if not intervals :
+            raise ConfigError("Missing required [target/{name}/intervals]".format(name=name))
 
         # lookup intervals
         _intervals = list(cls.config_intervals(name, intervals))
@@ -481,6 +490,10 @@ class Target (object) :
 
         # configured
         keep = interval.keep
+
+        if not keep :
+            log.info("%s: Zero keep given, not cleaning up anything", interval)
+            return
 
         # items to clean?
         items = os.listdir(dir_path)
