@@ -5,8 +5,9 @@
 from pvl.backup.invoke import command
 
 import contextlib
-import os.path
+import os, os.path
 import logging
+import tempfile
 
 log = logging.getLogger('pvl.backup.mount')
 
@@ -89,27 +90,46 @@ class Mount (object) :
         return self.mnt
 
 @contextlib.contextmanager
-def mount (dev, mnt, **kwargs) :
+def mount (dev, mnt=None, name_hint='tmp', **kwargs) :
     """
         Use a temporary mount:
 
-        with mount('/dev/...', '/mnt', readonly=True) as mount:
+        with mount('/dev/...', readonly=True) as mount:
             ...
+
+        Mounts at the given mountpoint path, or a tempdir
     """
 
-    mount = Mount(dev, mnt, **kwargs)
+    if mnt is None :
+        mnt = tmpdir = tempfile.mkdtemp(suffix='.mnt', prefix=name_hint)
 
-    # open
-    log.debug("open: %s", mount)
-    mount.open()
+        log.debug("using tmp mnt: %s", tmpdir)
 
+    else :
+        tmpdir = None
+        
+    log.debug("mount: %s -> %s", dev, mnt)
+
+    # with tempdir
     try :
-        log.debug("got: %s", mount)
-        yield mount
+        mount = Mount(dev, mnt, **kwargs)
+
+        # open
+        log.debug("open: %s", mount)
+        mount.open()
+
+        try :
+            log.debug("got: %s", mount)
+            yield mount
+
+        finally:
+            # cleanup
+            log.debug("cleanup: %s", mount)
+            mount.close()
 
     finally:
-        # cleanup
-        log.debug("cleanup: %s", mount)
-        mount.close()
-
+        if tmpdir :
+            # cleanup
+            log.debug("cleanup tmp mnt: %s", tmpdir)
+            os.rmdir(tmpdir)
 

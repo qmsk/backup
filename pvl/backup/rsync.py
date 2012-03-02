@@ -76,9 +76,6 @@ class RSyncLVMServer (RSyncServer) :
         lvm = self.volume.lvm
         volume = self.volume
 
-        # XXX: generate
-        path = '/mnt'
-
         # snapshot
         log.info("Open snapshot...")
 
@@ -87,9 +84,9 @@ class RSyncLVMServer (RSyncServer) :
             log.info("Snapshot opened: %s", snapshot.lvm_path)
 
             # mount
-            log.info("Mounting snapshot: %s -> %s", snapshot, path)
+            log.info("Mounting snapshot: %s", snapshot)
 
-            with mount(snapshot.dev_path, path, readonly=True) as mountpoint:
+            with mount(snapshot.dev_path, name_hint=('lvm_' + snapshot.name + '_'), readonly=True) as mountpoint:
                 log.info("Mounted snapshot: %s", mountpoint)
                 
                 # rsync!
