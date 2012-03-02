@@ -7,6 +7,7 @@
         sudo sh -c "PYTHONPATH=. rsync -e './scripts/pvlbackup-rsync-wrapper --debug -C --' -ax testing:lvm:asdf:test test/tmp"
 """
 
+from pvl.backup import __version__
 from pvl.backup.rsync import RSyncCommandFormatError
 from pvl.backup.invoke import InvokeError
 from pvl.backup import rsync
@@ -33,6 +34,7 @@ def parse_options (argv) :
 
             # module docstring
             description = __doc__,
+            version     = __version__,
     )
 
     # logging

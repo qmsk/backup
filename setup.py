@@ -1,9 +1,11 @@
 from distutils.core import setup
 
+# XXX: for determining version
+import pvl.backup
 
 setup(
     name            = 'pvl.backup',
-    version         = '0.2.2',
+    version         = pvl.backup.__version__,
 
     url             = 'http://hg.qmsk.net/pvl-backup/',
     author          = 'Tero Marttila',

@@ -10,6 +10,7 @@
     Then archives <dst>/current to <dst>/<period>/<date> using --link-dest.
 """
 
+from pvl.backup import __version__
 from pvl.backup import rsync
 
 import optparse, ConfigParser
@@ -31,6 +32,7 @@ def parse_options (argv, defaults) :
     parser = optparse.OptionParser(
             prog        = argv[0],
             usage       = '%prog: [options] [ --config <path> | --target <path> [ --source <src> ] [ --interval <name> ] ]',
+            version     = __version__,
 
             # module docstring
             # XXX: breaks multi-line descriptions..
