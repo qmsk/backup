@@ -51,8 +51,6 @@ def process_opt (opt, value) :
 
         >>> process_opt('foo', True)
         ('--foo',)
-        >>> process_opt('foo', False)
-        ()
         >>> process_opt('foo', 2)
         ('--foo', '2')
         >>> process_opt('foo', 'bar')
@@ -60,9 +58,13 @@ def process_opt (opt, value) :
         >>> process_opt('foo_bar', 'asdf')
         ('--foo-bar', 'asdf')
 
-        # XXX: weird?
+        # empty
+        >>> process_opt('foo', False)
+        ()
+        >>> process_opt('foo', None)
+        ()
         >>> process_opt('bar', '')
-        ('--bar', '')
+        ()
 
         Returns a tuple of argv items.
     """
@@ -74,7 +76,7 @@ def process_opt (opt, value) :
         # flag opt
         return (opt, )
 
-    elif value is False or value is None:
+    elif not value :
         # flag opt / omit
         return ( )
 
