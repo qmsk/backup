@@ -470,15 +470,17 @@ class Target (object) :
         # configured
         keep = interval.keep
 
-        # clean?
+        # items to clean?
         items = os.listdir(dir_path)
-        items.sort()
+
+        # sort newest -> oldest
+        items.sort(reverse=True)
 
         log.info("%s: Have %d / %d items", interval, len(items), keep)
         log.debug("%s: items: %s", interval, ' '.join(items))
 
         if len(items) > keep :
-            # clean out
+            # select oldest ones
             clean = items[keep:]
 
             log.info("%s: Cleaning out %d items", interval, len(clean))
@@ -489,8 +491,11 @@ class Target (object) :
 
                 log.info("%s: Clean: %s", interval, path)
 
-                os.unlink(path)
-
+                if not options.dry_run :
+                    log.debug("rmtree: %s", path)
+                    os.unlink(path)
+                else :
+                    log.debug("dryrun: %s", path)
 
     def clean_snapshots (self, options) :
         """
