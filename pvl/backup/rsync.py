@@ -77,20 +77,16 @@ class RSyncLVMServer (RSyncServer) :
         volume = self.volume
 
         # snapshot
-        log.info("Open snapshot...")
+        log.info("Open snapshot: %s", volume)
 
         # XXX: generate snapshot nametag to be unique?
         with lvm.snapshot(volume, tag='backup') as snapshot:
-            log.info("Snapshot opened: %s", snapshot.lvm_path)
-
             # mount
             log.info("Mounting snapshot: %s", snapshot)
 
             with mount(snapshot.dev_path, name_hint=('lvm_' + snapshot.name + '_'), readonly=True) as mountpoint:
-                log.info("Mounted snapshot: %s", mountpoint)
-                
                 # rsync!
-                log.info("Running rsync: ...")
+                log.info("Running rsync: %s", mountpoint)
 
                 # with trailing slash
                 return self._execute(options, mountpoint.path + '/')

@@ -63,7 +63,7 @@ def parse_options (argv) :
     # defaults
     parser.set_defaults(
         debug_for   = [],
-        loglevel    = logging.WARNING,
+        loglevel    = logging.INFO,
     )
 
     # parse
