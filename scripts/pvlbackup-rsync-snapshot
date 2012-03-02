@@ -21,7 +21,7 @@ import logging
 
 log = logging.getLogger()
 
-# command-line options
+# command-line options, global state
 options = None
 
 def parse_options (argv, defaults) :
@@ -146,7 +146,12 @@ def parse_config (path, defaults) :
         log.debug("section: %s", section_name)
 
         # subsections
-        section_path = section_name.split(':')
+        if ':' in section_name :
+            # legacy!
+            section_path = section_name.split(':')
+        else :
+            # new! shiny!
+            section_path = section_name.split('/')
 
         # lookup section dict from config
         lookup = config
@@ -295,7 +300,7 @@ class Target (object) :
             try :
                 base = options.intervals[interval]
             except KeyError:
-                raise ConfigError("Unknown interval for [target:{target}]: {interval}".format(target=name, interval=interval))
+                raise ConfigError("Unknown interval for [target/{target}]: {interval}".format(target=name, interval=interval))
 
             # parse
             yield Interval.from_target_config(interval, base, arg)
@@ -312,7 +317,7 @@ class Target (object) :
         rsync_options   = None,
     ) :
         if not source and source is not False :
-            raise ConfigError("Missing required option: source for [target:{name}]".format(name=name))
+            raise ConfigError("Missing required option: source for [target/{name}]".format(name=name))
 
         # global defaults
         _rsync_options = dict(options.rsync_options)
