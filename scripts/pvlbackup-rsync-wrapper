@@ -43,6 +43,7 @@ def parse_options (argv) :
     general.add_option('-q', '--quiet',      dest='loglevel', action='store_const', const=logging.WARNING, help="Less output")
     general.add_option('-v', '--verbose',    dest='loglevel', action='store_const', const=logging.INFO,  help="More output")
     general.add_option('-D', '--debug',      dest='loglevel', action='store_const', const=logging.DEBUG, help="Even more output")
+    general.add_option('--debug-for',        action='append', metavar='MODULE', help="Enable logging for the given logger/module name")
 
     parser.add_option_group(general)
 
@@ -61,6 +62,7 @@ def parse_options (argv) :
 
     # defaults
     parser.set_defaults(
+        debug_for   = [],
         loglevel    = logging.WARNING,
     )
 
@@ -72,6 +74,10 @@ def parse_options (argv) :
         format  = '%(levelname)6s %(name)s : %(funcName)s : %(message)s',
         level   = options.loglevel,
     )
+
+    # enable debugging for specific targets
+    for target in options.debug_for :
+        logging.getLogger(target).setLevel(logging.DEBUG)
 
     return options, args
 
