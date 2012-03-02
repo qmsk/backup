@@ -76,6 +76,9 @@ def parse_options (argv, defaults) :
     parser.add_option('-c', '--config',     metavar='FILE',
         help="Load configuration file")
 
+    parser.add_option('-r', '--run',        metavar='NAME',
+        help="Run given set of targets, per config [run/...]")
+
     #
     parser.add_option('-T', '--target',    metavar='PATH',
         help="Target path")
@@ -304,7 +307,7 @@ class Target (object) :
         for interval, arg in intervals.iteritems() :
             # lookup base from options.intervals
             try :
-                base = options.intervals[interval]
+                base = options.intervals[process_config_name(interval)]
             except KeyError:
                 raise ConfigError("Unknown interval for [target/{target}]: {interval}".format(target=name, interval=interval))
 
@@ -663,7 +666,25 @@ class Target (object) :
     def __str__ (self) :
         return self.name
 
-def run (options, targets) :
+def _parse_run_targets (options, config, run) :
+    """
+        Parse given run section from config into a series of target names to run.
+    """
+
+    for target, enable in config['run'][process_config_name(options.run)].iteritems() :
+        # enabled?
+        enable = config_bool('enable', enable)
+
+        if not enable :
+            continue
+        
+        # check
+        if target not in options.targets :
+            raise ConfigError("Unknown [target/{target}] in [run/{run}]".format(target=target, run=run))
+
+        yield target
+
+def run (options, run_targets) :
     # default config
     config = dict(
         rsync_options   = {},
@@ -678,10 +699,13 @@ def run (options, targets) :
         except ConfigError as e:
             log.error("Configuration error: %s: %s", options.config, e)
             return 2
+
+    # targets to run
+    options.targets = {}
  
     # manual?
     if options.target :
-        config['targets'][options.target] = dict(
+        options.targets['console'] = Target.from_config(
             path        = options.target,
             source      = options.target_source,
             intervals   = dict((name, None) for name in options.target_intervals),
@@ -699,6 +723,7 @@ def run (options, targets) :
         # store
         options.intervals[name] = interval
 
+    # rsync options
     for option in config['rsync_options'] :
         value = config['rsync_options'][option]
 
@@ -710,31 +735,61 @@ def run (options, targets) :
         # store
         options.rsync_options[option] = value
 
-    # what targets?
-    if not targets :
-        # default to all defined targets
-        targets = list(config['targets'])
-    
-    else :
-        # given ones, but verify they exist
-        for target in targets :
-            if target not in config['targets'] :
-                log.error("Unknown target given: %s", target)
-                log.info("Defined targets: %s", ' '.join(config['targets']))
-
-                return 2
-
-    # targets
-    for name in targets :
+    # target definitions
+    for name in config['targets'] :
         target_config = config['targets'][name]
 
         # parse
         target = Target.from_config(options, name, **target_config)
 
-        log.info("Config target: %s", name)
+        log.debug("config target: %s", name)
 
-        # run
-        target.run(options)
+        options.targets[name] = target
+
+    # what targets?
+    if run_targets :
+        # keep as-is
+        log.debug("Running given targets: %s", run_targets)
+
+    if options.run :
+
+        # given [run/...] definition..
+        run_targets = list(_parse_run_targets(options, config, options.run))
+        
+        log.info("Running %d given [run/%s] targets", len(run_targets), options.run)
+        log.debug("[run/%s]: %s", options.run, run_targets)
+    
+    # run
+    if run_targets :
+        log.info("Running %d given targets...", len(run_targets))
+
+        # run given ones
+        for name in run_targets :
+            try :
+                # get
+                target = options.targets[name]
+
+            except KeyError:
+                log.error("Unknown target given: %s", name)
+                log.info("Defined targets: %s", ' '.join(options.targets))
+                return 2
+
+
+            # run
+            log.info("Target: %s", name)
+
+            target.run(options)
+
+    else :
+        # all targets
+        log.info("Running all %d targets...", len(options.targets))
+
+        # targets
+        for name, target in options.targets.iteritems() :
+            log.info("Target: %s", name)
+
+            # run
+            target.run(options)
 
     # ok
     return 0
