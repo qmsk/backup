@@ -8,7 +8,6 @@ from pvl.backup.lvm import LVM, LVMVolume, LVMSnapshot
 from pvl.backup.mount import mount
 from pvl.backup import invoke
 
-import shlex
 import os.path
 
 import logging
@@ -102,11 +101,11 @@ class RSyncLVMServer (RSyncServer) :
             # cleanup
         # cleanup
  
-def parse_command (command, restrict_server=True, restrict_readonly=True) :
+def parse_command (command_parts, restrict_server=True, restrict_readonly=True) :
     """
         Parse given rsync server command into bits. 
 
-            command             - the command-string sent by rsync
+            command_parts       - the command-list sent by rsync
             restrict_server     - restrict to server-mode
             restrict_readonly   - restrict to read/send-mode
         
@@ -115,16 +114,13 @@ def parse_command (command, restrict_server=True, restrict_readonly=True) :
             (cmd, options, source, dest)
     """
 
-    # split
-    parts = shlex.split(command)
-
     cmd = None
     options = []
     source = None
     dest = None
 
     # parse
-    for part in parts :
+    for part in command_parts :
         if cmd is None :
             cmd = part
 
