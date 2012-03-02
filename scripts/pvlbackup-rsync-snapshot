@@ -289,6 +289,18 @@ class Target (object) :
     """
 
     @classmethod
+    def config_intervals (cls, name, intervals) :
+        for interval, arg in intervals.iteritems() :
+            # lookup base from options.intervals
+            try :
+                base = options.intervals[interval]
+            except KeyError:
+                raise ConfigError("Unknown interval for [target:{target}]: {interval}".format(target=name, interval=interval))
+
+            # parse
+            yield Interval.from_target_config(interval, base, arg)
+
+    @classmethod
     def from_config (cls, options, name,
         path            = False,
         source          = None,
@@ -313,12 +325,7 @@ class Target (object) :
             ])
 
         # lookup intervals
-        _intervals = [
-            (
-                # lookup base from options.intervals
-                Interval.from_target_config(name, options.intervals.get(name), arg)
-            ) for name, arg in intervals.iteritems()
-        ]
+        _intervals = list(cls.config_intervals(name, intervals))
 
         return cls(name, 
             path            = path if path else name,
@@ -443,7 +450,7 @@ class Target (object) :
         if os.path.exists(path) :
             target = os.readlink(path)
 
-            log.info("%s: Found existing: %s -> %s", interval, name, target)
+            log.info("%s: Keeping existing: %s -> %s", interval, name, target)
 
         else :
             # update
@@ -543,7 +550,7 @@ class Target (object) :
             log.warn("Found broken symlinks to snapshots: %s", ' '.join(broken))
         
         if unused :
-            log.info("Clean out unused snapshots: %s", ' '.join(unused))
+            log.info("Cleaning out %d unused snapshots:", len(unused))
 
             for name in unused :
                 path = os.path.join(snapshots_path, name)
