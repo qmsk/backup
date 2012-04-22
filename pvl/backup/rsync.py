@@ -280,7 +280,7 @@ def parse_source (path, restrict_path=False, lvm_opts={}) :
 
         return RSyncLVMServer(volume, **lvm_opts)
 
-    elif ':/' in path :
+    elif ':' in path :
         host, path = path.split(':', 1)
 
         # remote host
@@ -290,5 +290,5 @@ def parse_source (path, restrict_path=False, lvm_opts={}) :
        
     else :
         # invalid
-        raise RSyncCommandFormatError("Unrecognized backup path")
+        raise RSyncCommandFormatError("Unrecognized backup path: {path}".format(path=path))
 
