@@ -17,6 +17,6 @@ setup(
     # binaries
     scripts         = [
         'bin/pvl.backup-rsync', 
-        'bin/pvlbackup-rsync-snapshot',
+        'bin/pvl.backup-snapshot',
     ],
 )
