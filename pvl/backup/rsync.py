@@ -247,9 +247,16 @@ def parse_source (path, restrict_path=False, lvm_opts={}) :
 
             lvm_opts        - dict of **opts for RSyncLVMServer
     """
+
+    endslash = path.endswith('/')
         
     # normalize
     path = os.path.normpath(path)
+
+    if endslash and not path.endswith('/') :
+        # add it back in
+        # happens for 'foo:/' and such
+        path += '/'
 
     # verify path
     if restrict_path :
