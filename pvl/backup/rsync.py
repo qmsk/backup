@@ -36,13 +36,26 @@ class RSyncServer (object) :
         rsync server-mode execution.
     """
 
-    def _execute (self, options, path) :
+    def _execute (self, options, srcdst, path) :
         """
             Underlying rsync just reads from filesystem.
+
+                options     - list of rsync options
+                srcdst      - the (source, dest) pair with None placeholder, as returned by parse_command
+                path        - the real path to replace None with
         """
+    
+        # one of this will be None
+        src, dst = srcdst
+
+        # replace None -> path
+        src = src or path
+        dst = dst or path
+
+        log.debug("%r -> %r", src, dst)
         
         # invoke directly, no option-handling, nor stdin/out redirection
-        invoke.invoke(RSYNC, options + ['.', path], data=False)
+        invoke.invoke(RSYNC, options + [ src, dst ], data=False)
 
 class RSyncFSServer (RSyncServer) :
     """
@@ -54,8 +67,13 @@ class RSyncFSServer (RSyncServer) :
 
         self.path = path
 
-    def execute (self, options) :
-        return self._execute(options, self.path)
+    def execute (self, options, srcdst) :
+        """
+                options     - list of rsync options
+                srcdst      - the (source, dest) pair with None placeholder, as returned by parse_command
+        """
+
+        return self._execute(options, srcdst, self.path)
 
 class RSyncLVMServer (RSyncServer) :
     """
@@ -73,11 +91,12 @@ class RSyncLVMServer (RSyncServer) :
         self.volume = volume
         self.snapshot_opts = opts
  
-    def execute (self, options) :
+    def execute (self, options, srcdst) :
         """
             Snapshot, mount, execute
 
                 options     - list of rsync options
+                srcdst      - the (source, dest) pair with None placeholder, as returned by parse_command
         """
         
         # backup target from LVM command
@@ -97,7 +116,7 @@ class RSyncLVMServer (RSyncServer) :
                 log.info("Running rsync: %s", mountpoint)
 
                 # with trailing slash
-                return self._execute(options, mountpoint.path + '/')
+                return self._execute(options, srcdst, mountpoint.path + '/')
 
             # cleanup
         # cleanup
@@ -110,9 +129,15 @@ def parse_command (command_parts, restrict_server=True, restrict_readonly=True) 
             restrict_server     - restrict to server-mode
             restrict_readonly   - restrict to read/send-mode
         
+        In server mode, source will always be '.', and dest the source/dest.
+        
         Returns:
 
-            (cmd, options, source, dest)
+            (cmd, options, path, (source, dest))
+
+            path            -> the real source path
+            (source, dest)  -> combination of None for path, and the real source/dest
+
     """
 
     cmd = None
@@ -139,34 +164,49 @@ def parse_command (command_parts, restrict_server=True, restrict_readonly=True) 
     have_sender = ('--sender' in options)
 
     # verify
-    if not have_server :
+    if restrict_server and not have_server :
         raise RSyncCommandFormatError("Missing --server")
 
     if restrict_readonly and not have_sender :
         raise RSyncCommandFormatError("Missing --sender for readonly")
 
-    # parse path
+    if not source :
+        raise RSyncCommandFormatError("Missing source path")
+        
+    if not dest:
+        raise RSyncCommandFormatError("Missing dest path")
+
+
+    # parse real source
     if have_sender :
-        # read
-        # XXX: which way does the dot go?
+        # read; first arg will always be .
         if source != '.' :
             raise RSyncCommandFormatError("Invalid dest for sender")
-        
-        path = dest
 
-    else :
+        path = dest
+        dest = None
+        
+        log.debug("using server/sender source path: %s", path)
+
+    elif have_server :
         # write
         if source != '.' :
             raise RSyncCommandFormatError("Invalid source for reciever")
 
         path = dest
+        dest = None
+        
+        log.debug("using server dest path: %s", path)
 
-    if not path :
-        raise RSyncCommandFormatError("Missing path")
+    else :
+        # local src -> dst
+        path = source
+        source = None
+
+        log.debug("using local src path: %s -> %s", path, dest)
 
     # ok
-    return cmd, options, source, dest
-
+    return cmd, options, path, (source, dest)
       
 def parse_source (path, restrict_path=False, lvm_opts={}) :
     """
@@ -198,8 +238,7 @@ def parse_source (path, restrict_path=False, lvm_opts={}) :
         except ValueError, e:
             raise RSyncCommandFormatError("Invalid lvm pseudo-path: {error}".format(error=e))
         
-        # XXX: validate
-
+        # XXX: validate?
         log.info("LVM: %s/%s", vg, lv)
 
         # open

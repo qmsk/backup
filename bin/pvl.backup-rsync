@@ -21,9 +21,6 @@ import logging
 
 log = logging.getLogger()
 
-# command-line options
-options = None
-
 def parse_options (argv) :
     """
         Parse command-line arguments.
@@ -55,6 +52,9 @@ def parse_options (argv) :
 
     parser.add_option('-C', '--given-command', action='store_true', default=False,
             help="use given command in `rsync -e %prog` format")
+
+    parser.add_option('-n', '--noop', action='store_true', default=False,
+            help="Parse command, but do not execute")
 
     parser.add_option('-R', '--readonly',   action='store_true', default=False,
             help="restrict to read/source mode")
@@ -90,17 +90,21 @@ def parse_options (argv) :
 
     return options, args
 
-def rsync_wrapper (command, restrict='lvm:') :
+def rsync_wrapper (command, options, local=False) :
     """
         Wrap given rsync command.
 
         Parses the command, the source path, and then executes rsync within the source path (which may be a special
         pseudo-path with additional handling).
+
+            local       - the given command is a full local command, not an --server mode operation
     """
 
+    # parse the rsync command sent by the client
     try :
-        # parse the rsync command sent by the client
-        rsync_cmd, rsync_options, source_path, dest_path = rsync.parse_command(command, 
+        # path = the real source path
+        rsync_cmd, rsync_options, path, srcdst = rsync.parse_command(command, 
+                restrict_server     = not local,
                 restrict_readonly   = options.readonly,
             )
 
@@ -108,9 +112,8 @@ def rsync_wrapper (command, restrict='lvm:') :
         log.error("invalid rsync command: %r: %s", command, e)
         return 2
 
-    # XXX: the real path is always given second..
-    path = dest_path
 
+    # parse source
     try :
         # parse the source path as given by the client, may be a real path or pseudo-path
         source = rsync.parse_source(path,
@@ -122,48 +125,61 @@ def rsync_wrapper (command, restrict='lvm:') :
         log.error("invalid rsync source: %r: %s", path, e)
         return 2
 
+    # noop?
+    if options.noop :
+        log.info("noop: %r -> %r: execute(%r, %r)", path, source, rsync_options, srcdst)
+        return 0
+
+    # execute
     try :
         # run rsync within the source (may perform additional stuff like snapshotting...)
-        source.execute(rsync_options)
+        source.execute(rsync_options, srcdst)
 
     except InvokeError, e:
         log.error("%s failed: %d", e.cmd, e.exit)
         return e.exit
 
+
     # ok
     return 0
 
 def main (argv) :
-    global options
+    """
+        Run, with full argv
+    """
 
     # global options + args
     options, args = parse_options(argv)
 
-    # command required
+    # was a local command, not remote?
+    local = False
+
+    # from args (as given by `rsync -e pvlbackup-rsync-wrapper`) -> 'pvlbackup-rsync-wrapper <host> (<command> ...)'
     if options.given_command :
-        # from args (as given by `rsync -e pvlbackup-rsync-wrapper`) -> 'pvlbackup-rsync-wrapper <host> (<command> ...)'
         host = args.pop(0)
         command_parts = args
 
         log.debug("host=%r, using command from args: %r", host, command_parts)
-
-    # args
-    elif args :
-        log.error("No arguments are handled")
-        return 2
-
+    
+    # from env/--command
     elif options.command:
         # as given
         command_parts = shlex.split(options.command)
+
+    # normal args
+    elif args :
+        command_parts = [argv[0]] + args
+        local = True
+
+        log.debug("using given rsync args: %r", command_parts)
 
     else :
         log.error("SSH_ORIGINAL_COMMAND not given")
         return 2
 
-
     # run
     try :
-        return rsync_wrapper(command_parts)
+        return rsync_wrapper(command_parts, options, local)
 
     except Exception, e:
         log.error("Internal error:", exc_info=e)
