@@ -264,12 +264,23 @@ def parse_source (path, restrict_path=False, lvm_opts={}) :
         return RSyncFSServer(path)
 
     elif path.startswith('lvm:') :
+        _, lvm = path.split(':', 1)
+
         # LVM LV
         try :
-            lvm, vg, lv = path.split(':')
+            if ':' in lvm :
+                vg, lv = lvm.split(':', 1)
+
+                log.warn("old lvm: syntax: lvm:%s; use: lvm:%s/%s", path, vg, lv)
+
+            elif '/' in lvm:
+                vg, lv = lvm.split('/', 1)
+
+            else :
+                raise RSyncCommandFormatError("Invalid lvm pseudo-path: {lvm}: unrecognized vg/lv separator".format(lvm=lvm))
 
         except ValueError, e:
-            raise RSyncCommandFormatError("Invalid lvm pseudo-path: {error}".format(error=e))
+            raise RSyncCommandFormatError("Invalid lvm pseudo-path: {lvm}: {error}".format(lvm=lvm, error=e))
         
         # XXX: validate?
         log.info("LVM: %s/%s", vg, lv)
