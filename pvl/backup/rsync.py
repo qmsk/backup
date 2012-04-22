@@ -92,7 +92,7 @@ class RSyncRemoteServer (RSyncServer) :
         RSyncServer.__init__(self)
     
         # glue
-        self.path = path + ':' + path
+        self.path = host + ':' + path
 
     def execute (self, options, srcdst) :
         """
