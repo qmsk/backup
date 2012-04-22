@@ -322,7 +322,7 @@ class Target (object) :
 
     @classmethod
     def from_config (cls, options, name,
-        path            = False,
+        path            = None,
         source          = None,
         enable          = 'no',
         exclude_from    = None,
@@ -722,7 +722,7 @@ def run (options, run_targets) :
  
     # manual?
     if options.target :
-        options.targets['console'] = Target.from_config(
+        options.targets['console'] = Target.from_config(options, 'console',
             path        = options.target,
             source      = options.target_source,
             intervals   = dict((name, None) for name in options.target_intervals),
