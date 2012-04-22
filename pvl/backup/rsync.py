@@ -62,14 +62,22 @@ class RSyncLVMServer (RSyncServer) :
         Backup LVM LV by snapshotting + mounting it.
     """
 
-    def __init__ (self, volume) :
+    def __init__ (self, volume, **opts) :
+        """
+            volume      - the LVMVolume to snapshot
+            **opts      - options for LVM.snapshot
+        """
+
         RSyncServer.__init__(self)
 
         self.volume = volume
+        self.snapshot_opts = opts
  
     def execute (self, options) :
         """
             Snapshot, mount, execute
+
+                options     - list of rsync options
         """
         
         # backup target from LVM command
@@ -80,7 +88,7 @@ class RSyncLVMServer (RSyncServer) :
         log.info("Open snapshot: %s", volume)
 
         # XXX: generate snapshot nametag to be unique?
-        with lvm.snapshot(volume, tag='backup') as snapshot:
+        with lvm.snapshot(volume, tag='backup', **self.snapshot_opts) as snapshot:
             # mount
             log.info("Mounting snapshot: %s", snapshot)
 
@@ -160,9 +168,11 @@ def parse_command (command_parts, restrict_server=True, restrict_readonly=True) 
     return cmd, options, source, dest
 
       
-def parse_source (path, restrict_path=False) :
+def parse_source (path, restrict_path=False, lvm_opts={}) :
     """
         Figure out source to rsync from, based on pseudo-path given in rsync command.
+
+            lvm_opts        - dict of **opts for RSyncLVMServer
     """
         
     # normalize
@@ -196,7 +206,7 @@ def parse_source (path, restrict_path=False) :
         lvm = LVM(vg)
         volume = lvm.volume(lv)
 
-        return RSyncLVMServer(volume)
+        return RSyncLVMServer(volume, **lvm_opts)
        
     else :
         # invalid

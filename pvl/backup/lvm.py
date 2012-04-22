@@ -7,8 +7,15 @@ from pvl.backup.invoke import invoke, optargs, InvokeError
 import contextlib
 import os.path
 import logging
+import time
 
 log = logging.getLogger('pvl.backup.lvm')
+
+# default snapshot size
+LVM_SNAPSHOT_SIZE   = '5G'
+
+# number of seconds to wait for lvm snapshot to settle after unmount..
+LVM_SNAPSHOT_WAIT   = 5
 
 class LVMError (Exception) :
     pass
@@ -60,30 +67,33 @@ class LVM (object) :
         return LVMVolume(self, name)
 
     @contextlib.contextmanager
-    def snapshot (self, base, **kwargs) :
+    def snapshot (self, base, wait=LVM_SNAPSHOT_WAIT, **opts) :
         """
             A Context Manager for handling an LVMSnapshot.
 
             See LVMSnapshot.create()
 
             with lvm.snapshot(lv) as snapshot : ...
+
+                wait        - wait given interval for the snapshot device to settle before unmounting it
+                **opts      - LVMSnapshot.create() options (e.g. size)
         """
 
-        log.debug("creating snapshot from {base}: {opts}".format(base=base, opts=kwargs))
-        snapshot = LVMSnapshot.create(self, base, **kwargs)
+        log.debug("creating snapshot from {base}: wait={wait} {opts}".format(base=base, wait=wait, opts=opts))
+        snapshot = LVMSnapshot.create(self, base, **opts)
 
         try :
             log.debug("got: {0}".format(snapshot))
             yield snapshot
 
         finally:
-            # XXX: there's some timing bug with an umount leaving the LV open, do we need to wait for it to get closed after mount?
-            #       https://bugzilla.redhat.com/show_bug.cgi?id=577798
-            #       some udev event bug, possibly fixed in lvm2 2.02.86?
-            # try to just patiently wait for it to settle down... if this isn't enough, we need some dmremove magic
-            log.debug("cleanup: waiting for snapshot volume to settle...")
-            import time
-            time.sleep(1)
+            if wait :
+                # XXX: there's some timing bug with an umount leaving the LV open, do we need to wait for it to get closed after mount?
+                #       https://bugzilla.redhat.com/show_bug.cgi?id=577798
+                #       some udev event bug, possibly fixed in lvm2 2.02.86?
+                # try to just patiently wait for it to settle down... if this isn't enough, we need some dmremove magic
+                log.debug("cleanup: waiting %.2f seconds for snapshot volume to settle...", wait)
+                time.sleep(wait)
 
             # cleanup
             log.debug("cleanup: {0}".format(snapshot))
@@ -166,9 +176,6 @@ class LVMSnapshot (LVMVolume) :
     """
         LVM snapshot
     """
-    
-    # default snapshot size
-    LVM_SNAPSHOT_SIZE   = '5G'
 
     # base lv
     base = None
@@ -185,7 +192,7 @@ class LVMSnapshot (LVMVolume) :
         name = '{name}-{tag}'.format(name=base.name, tag=tag)
 
         # snapshot instance
-        snapshot = cls(lvm, base, name)
+        snapshot = cls(lvm, base, name, size=size)
 
         ## verify
         # base should exist

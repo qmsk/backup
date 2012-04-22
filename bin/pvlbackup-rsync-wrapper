@@ -4,13 +4,15 @@
     SSH authorized_keys command="..." wrapper for rsync.
 
     Testing goes something like:
-        sudo sh -c "PYTHONPATH=. rsync -e './scripts/pvlbackup-rsync-wrapper --debug -C --' -ax testing:lvm:asdf:test test/tmp"
+        sudo PYTHONPATH=. ./bin/pvlbackup-rsync-wrapper --command 'rsync --server --sender -ax . lvm:asdf:test' -vD
+
+        sudo sh -c "PYTHONPATH=. rsync -e './bin/pvlbackup-rsync-wrapper --debug -C --' -ax testing:lvm:asdf:test test/tmp"
 """
 
 from pvl.backup import __version__
 from pvl.backup.rsync import RSyncCommandFormatError
 from pvl.backup.invoke import InvokeError
-from pvl.backup import rsync
+from pvl.backup import rsync, lvm
 
 import optparse
 import shlex
@@ -60,6 +62,13 @@ def parse_options (argv) :
     parser.add_option('-P', '--restrict-path', metavar='PATH', default=False,
             help="restrict to given path prefix")
 
+    # lvm options
+    parser.add_option('-L', '--snapshot-size', metavar='SIZE', default=lvm.LVM_SNAPSHOT_SIZE,
+            help="create snapshot with given LV size (used to store writes during backup)")
+
+    parser.add_option('--snapshot-wait', metavar='SECONDS', default=lvm.LVM_SNAPSHOT_WAIT, type='float',
+            help="wait for snapshot to settle after unmounting")
+
     # defaults
     parser.set_defaults(
         debug_for   = [],
@@ -106,6 +115,7 @@ def rsync_wrapper (command, restrict='lvm:') :
         # parse the source path as given by the client, may be a real path or pseudo-path
         source = rsync.parse_source(path,
                 restrict_path       = options.restrict_path,
+                lvm_opts            = dict(size = options.snapshot_size, wait = options.snapshot_wait),
             )
 
     except RSyncCommandFormatError, e:
@@ -135,7 +145,7 @@ def main (argv) :
         host = args.pop(0)
         command_parts = args
 
-        log.debug("using command from args: %r", command_parts)
+        log.debug("host=%r, using command from args: %r", host, command_parts)
 
     # args
     elif args :
