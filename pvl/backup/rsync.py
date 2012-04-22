@@ -75,6 +75,36 @@ class RSyncFSServer (RSyncServer) :
 
         return self._execute(options, srcdst, self.path)
 
+    def __str__ (self) :
+        return self.path
+    
+class RSyncRemoteServer (RSyncServer) :
+    """
+        Remote filesystem backup.
+    """
+
+    def __init__ (self, host, path) :
+        """
+            host        - remote SSH host
+            path        - remote path
+        """
+
+        RSyncServer.__init__(self)
+    
+        # glue
+        self.path = path + ':' + path
+
+    def execute (self, options, srcdst) :
+        """
+                options     - list of rsync options
+                srcdst      - the (source, dest) pair with None placeholder, as returned by parse_command
+        """
+
+        return self._execute(options, srcdst, self.path)
+
+    def __str__ (self) :
+        return self.path
+ 
 class RSyncLVMServer (RSyncServer) :
     """
         Backup LVM LV by snapshotting + mounting it.
@@ -120,6 +150,9 @@ class RSyncLVMServer (RSyncServer) :
 
             # cleanup
         # cleanup
+ 
+    def __str__ (self) :
+        return 'lvm:{volume}'.format(volume=self.volume)
  
 def parse_command (command_parts, restrict_server=True, restrict_readonly=True) :
     """
@@ -246,6 +279,14 @@ def parse_source (path, restrict_path=False, lvm_opts={}) :
         volume = lvm.volume(lv)
 
         return RSyncLVMServer(volume, **lvm_opts)
+
+    elif ':/' in path :
+        host, path = path.split(':', 1)
+
+        # remote host
+        log.info("remote: %s:%s", host, path)
+
+        return RSyncRemoteServer(host, path)
        
     else :
         # invalid

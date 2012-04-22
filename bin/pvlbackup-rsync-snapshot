@@ -11,7 +11,7 @@
 """
 
 from pvl.backup import __version__
-from pvl.backup import rsync
+from pvl.backup import rsync, invoke
 
 import optparse, ConfigParser
 import os, os.path, stat
@@ -314,6 +314,12 @@ class Target (object) :
             # parse
             yield Interval.from_target_config(interval, base, arg)
 
+    # type() mapping for lvm_options
+    LVM_OPTIONS = dict(
+        wait    = float,
+        size    = str,
+    )
+
     @classmethod
     def from_config (cls, options, name,
         path            = False,
@@ -324,9 +330,19 @@ class Target (object) :
         # subsections
         intervals       = None,
         rsync_options   = None,
+        lvm_options     = {},
     ) :
         if not source and source is not False :
             raise ConfigError("Missing required option: source for [target/{name}]".format(name=name))
+
+        # process lvm opts by LVM_OPTIONS types
+        lvm_options = dict((opt, cls.LVM_OPTIONS[opt](value)) for opt, value in lvm_options.iteritems())
+
+        # parse source -> rsync.RSyncServer
+        source_path = source
+        source = rsync.parse_source(source, lvm_opts=lvm_options)
+
+        log.info("parse source: %r -> %s", source_path, source)
 
         # global defaults
         _rsync_options = dict(options.rsync_options)
@@ -422,9 +438,10 @@ class Target (object) :
             # rsync links absolute paths..
             opts['link-dest'] = target_abs
 
-        # go
         log.debug("rsync %s -> %s", self.source, temp_path)
-        rsync.rsync(self.source, temp_path, **opts)
+
+        # run the rsync.RSyncServer; None as a placeholder will get replaced with the actual source
+        self.source.execute(invoke.optargs(**opts), srcdst=(None, temp_path))
 
         # move in to final name
         log.debug("rename %s -> %s", temp_path, snapshot_path)
