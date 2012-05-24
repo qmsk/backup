@@ -52,7 +52,7 @@ class RSyncServer (object) :
         src = src or path
         dst = dst or path
 
-        log.debug("%r -> %r", src, dst)
+        log.info("rsync %ss %s %s", ' '.join(options), src, dst)
         
         # invoke directly, no option-handling, nor stdin/out redirection
         invoke.invoke(RSYNC, options + [ src, dst ], data=False)
@@ -266,7 +266,7 @@ def parse_source (path, restrict_path=False, lvm_opts={}) :
     if path.startswith('/') :
         # direct filesystem path
         # XXX: how to handle=
-        log.info("filesystem: %s", path)
+        log.debug("filesystem: %s", path)
 
         return RSyncFSServer(path)
 
@@ -290,7 +290,7 @@ def parse_source (path, restrict_path=False, lvm_opts={}) :
             raise RSyncCommandFormatError("Invalid lvm pseudo-path: {lvm}: {error}".format(lvm=lvm, error=e))
         
         # XXX: validate?
-        log.info("LVM: %s/%s", vg, lv)
+        log.debug("LVM: %s/%s", vg, lv)
 
         # open
         lvm = LVM(vg)
@@ -302,7 +302,7 @@ def parse_source (path, restrict_path=False, lvm_opts={}) :
         host, path = path.split(':', 1)
 
         # remote host
-        log.info("remote: %s:%s", host, path)
+        log.debug("remote: %s:%s", host, path)
 
         return RSyncRemoteServer(host, path)
        

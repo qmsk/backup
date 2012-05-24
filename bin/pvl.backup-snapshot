@@ -69,7 +69,7 @@ def parse_options (argv, defaults) :
     parser.add_option('--clean',             action='store_true',
         help="Clean out both intervals and snapshots")
 
-    parser.add_option('-n', '--dry-run',    action='store_true',
+    parser.add_option('-n', '--noop',       action='store_true',
         help="Don't actually clean anything")
 
     #
@@ -343,7 +343,7 @@ class Target (object) :
         source_path = source
         source = rsync.parse_source(source, lvm_opts=lvm_options)
 
-        log.info("parse source: %r -> %s", source_path, source)
+        log.debug("parse source: %r -> %s", source_path, source)
 
         # global defaults
         _rsync_options = dict(options.rsync_options)
@@ -422,23 +422,30 @@ class Target (object) :
         if os.path.exists(temp_path) :
             raise Exception("Old temp snapshot dir remains, please clean up: {path}".format(path=temp_path))
 
-        log.info("Perform main snapshot: %s -> %s", self.source, snapshot_path)
-
-        # build rsync options
-        opts = dict(self.rsync_options)
-
+        # link-dest from current?
         if os.path.exists(self.current_path) :
             # real path to target
             target = os.readlink(self.current_path)
             target_path = os.path.join(os.path.dirname(self.current_path), target)
-            target_abs = os.path.abspath(target_path)
 
-            log.info("Using current -> %s as base", target_path)
+            log.debug("%s: link-dest: %s", self, target_path)
 
             # use as link-dest base; hardlinks unchanged files; target directory must be empty
-            # rsync links absolute paths..
-            opts['link-dest'] = target_abs
+            link_dest = target_path
 
+        else :
+            link_dest = None
+        
+        # log
+        log.info("%s: %s -> %s <- %s", self, self.source, snapshot_path, link_dest)
+
+        # build rsync options
+        opts = dict(self.rsync_options)
+
+        # rsync links absolute paths..
+        opts['link-dest'] = os.path.abspath(link_dest)
+        
+        # to tempdir
         log.debug("rsync %s -> %s", self.source, temp_path)
 
         # run the rsync.RSyncServer; None as a placeholder will get replaced with the actual source
@@ -450,7 +457,7 @@ class Target (object) :
 
         return snapshot_name
 
-    def update_interval (self, options, interval, now, snapshot_name) :
+    def interval (self, options, interval, now, snapshot_name) :
         """
             Update given <interval>/... links for this target, using the given new snapshot
         """
@@ -458,7 +465,7 @@ class Target (object) :
         dir_path = os.path.join(self.path, interval.name)
 
         if not os.path.exists(dir_path) :
-            log.warn("Creating interval dir: %s", dir_path)
+            log.warn("%s/%s: Creating interval dir: %s", self, interval, dir_path)
             os.mkdir(dir_path)
         
         
@@ -485,13 +492,13 @@ class Target (object) :
         if os.path.exists(path) :
             target = os.readlink(path)
 
-            log.info("%s: Keeping existing: %s -> %s", interval, name, target)
+            log.debug("%s: Keeping existing: %s -> %s", interval, name, target)
 
         else :
             # update
             target = os.path.join('..', 'snapshots', snapshot_name)
 
-            log.info("%s: Updating: %s -> %s", interval, name, target)
+            log.info("%s/%s: %s -> %s", self, interval, name, target)
             log.debug("%s -> %s", path, target)
 
             os.symlink(target, path)
@@ -506,14 +513,14 @@ class Target (object) :
         dir_path = os.path.join(self.path, interval.name)
 
         if not os.path.exists(dir_path) :
-            log.warn("%s: Skipping, no interval dir: %s", interval, dir_path)
+            log.warn("%s/%s: Skipping, no interval dir: %s", self, interval, dir_path)
             return
 
         # configured
         keep = interval.keep
 
         if not keep :
-            log.info("%s: Zero keep given, not cleaning up anything", interval)
+            log.info("%s/%s: Zero keep given, not cleaning up anything", self, interval)
             return
 
         # items to clean?
@@ -522,22 +529,21 @@ class Target (object) :
         # sort newest -> oldest
         items.sort(reverse=True)
 
-        log.info("%s: Have %d / %d items", interval, len(items), keep)
+        log.debug("%s/%s: Have %d / %d items", self, interval, len(items), keep)
         log.debug("%s: items: %s", interval, ' '.join(items))
 
         if len(items) > keep :
             # select oldest ones
             clean = items[keep:]
 
-            log.info("%s: Cleaning out %d items", interval, len(clean))
-            log.debug("%s: cleaning out: %s", interval, ' '.join(clean))
+            log.debug("%s/%s: cleaning out: %s", self, interval, ' '.join(clean))
 
             for item in clean :
                 path = os.path.join(dir_path, item)
 
-                log.info("%s: Clean: %s", interval, path)
+                log.info("%s/%s: %s", self, interval, path)
 
-                if not options.dry_run :
+                if not options.noop :
                     log.debug("rmtree: %s", path)
                     os.unlink(path)
                 else :
@@ -582,21 +588,21 @@ class Target (object) :
         unused = snapshots - found
         broken = found - snapshots
 
-        log.info("Found used=%d, unused=%d, broken=%d snapshot symlinks", len(used), len(unused), len(broken))
+        log.debug("%s: found used=%d, unused=%d, broken=%d snapshot symlinks", self, len(used), len(unused), len(broken))
         log.debug("used=%s, unused=%s", used, unused)
 
         if broken :
-            log.warn("Found broken symlinks to snapshots: %s", ' '.join(broken))
+            log.warn("%s: Found broken symlinks to snapshots: %s", self, ' '.join(broken))
         
         if unused :
-            log.info("Cleaning out %d unused snapshots:", len(unused))
+            log.debug("%s: Cleaning out %d unused snapshots:", self, len(unused))
 
             for name in unused :
                 path = os.path.join(snapshots_path, name)
 
-                log.info("Clean: %s", name)
+                log.info("%s: %s", self, name)
 
-                if not options.dry_run :
+                if not options.noop :
                     log.debug("rmtree: %s", path)
 
                     # nuke
@@ -614,7 +620,7 @@ class Target (object) :
         snapshot_name = self.snapshot(options, now)
 
         # update current
-        log.info("Updating current -> %s", snapshot_name)
+        log.debug("Updating current -> %s", snapshot_name)
 
         if os.path.islink(self.current_path) :
             # replace
@@ -630,19 +636,17 @@ class Target (object) :
         """
 
         if not self.intervals :
-            log.info("No intervals given; not running any")
+            log.warn("No intervals given")
 
         else :
             # maintain intervals
-            log.info("Updating %d intervals...", len(self.intervals))
+            log.debug("Updating %d intervals...", len(self.intervals))
 
             for interval in self.intervals :
                 log.debug("%s", interval)
 
-                log.info("Updating interval: %s", interval)
-
                 # update
-                self.update_interval(options, interval, now, snapshot_name)
+                self.interval(options, interval, now, snapshot_name)
 
     def run (self, options) :
         """
@@ -655,13 +659,12 @@ class Target (object) :
         # clean intervals?
         if options.clean_intervals:
             for interval in self.intervals :
-                log.info("Cleaning interval: %s...", interval)
-
+                log.debug("%s: cleaning interval: %s", self, interval)
                 self.clean_interval(options, interval)
 
         # clean snapshots?
         if options.clean_snapshots :
-            log.info("Cleaning snapshots...")
+            log.debug("%s: cleaning snapshots...", self)
 
             self.clean_snapshots(options)
 
@@ -670,7 +673,7 @@ class Target (object) :
             # timestamp for run
             now = datetime.datetime.now()
 
-            log.info("Started snapshot run at: %s", now)
+            log.debug("%s: started snapshot run at: %s", self, now)
 
             # snapshot + current
             snapshot_name = self.run_snapshot(options, now)
@@ -801,12 +804,11 @@ def run (options, run_targets) :
         # given [run/...] definition..
         run_targets = list(_parse_run_targets(options, config, options.run))
         
-        log.info("Running %d given [run/%s] targets", len(run_targets), options.run)
-        log.debug("[run/%s]: %s", options.run, run_targets)
+        log.debug("Running %d given [run/%s] targets: %s", len(run_targets), options.run, run_targets)
     
     # run
     if run_targets :
-        log.info("Running %d given targets...", len(run_targets))
+        log.debug("Running %d given targets...", len(run_targets))
 
         # run given ones
         for name in run_targets :
@@ -821,17 +823,17 @@ def run (options, run_targets) :
 
 
             # run
-            log.info("Target: %s", name)
+            log.info("%s", name)
 
             target.run(options)
 
     else :
         # all targets
-        log.info("Running all %d targets...", len(options.targets))
+        log.debug("Running all %d targets...", len(options.targets))
 
         # targets
         for name, target in options.targets.iteritems() :
-            log.info("Target: %s", name)
+            log.info("%s", name)
 
             # run
             target.run(options)
