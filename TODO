@@ -1,6 +1,12 @@
 TODO:
     run other targets even if one target fails due to a error (but fail on bugs...) (base class Exception?)
 
+    fix logging exec/scriptname prefix
+
+    stats: total/changed files/bytes
+
+    config: [target] exclude = ...
+
 0.3.0:
     pvl.backup.mount: mount without readonly fails to omit --options arg
     XXX: rsync-snapshot clean_interval removes newest items

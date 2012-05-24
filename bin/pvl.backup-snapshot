@@ -376,6 +376,8 @@ class Target (object) :
         enable          = False, 
         intervals       = [],
         rsync_options   = {},
+
+        # XXX: not implemented?
         exclude_from    = None
     ) :
         self.name = name
@@ -441,9 +443,10 @@ class Target (object) :
 
         # build rsync options
         opts = dict(self.rsync_options)
-
-        # rsync links absolute paths..
-        opts['link-dest'] = os.path.abspath(link_dest)
+        
+        if link_dest :
+            # rsync links absolute paths..
+            opts['link-dest'] = os.path.abspath(link_dest)
         
         # to tempdir
         log.debug("rsync %s -> %s", self.source, temp_path)
