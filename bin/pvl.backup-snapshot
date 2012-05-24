@@ -15,7 +15,7 @@ from pvl.backup import rsync, invoke
 
 import optparse, ConfigParser
 import os, os.path, stat
-import shutil
+import shutil, glob
 import datetime
 import logging
 
@@ -73,8 +73,8 @@ def parse_options (argv, defaults) :
         help="Don't actually clean anything")
 
     #
-    parser.add_option('-c', '--config',     metavar='FILE',
-        help="Load configuration file")
+    parser.add_option('-c', '--config',     metavar='FILE/DIR', action='append',    # multi
+        help="Load configuration file(s)")
 
     parser.add_option('-r', '--run',        metavar='NAME',
         help="Run given set of targets, per config [run/...]")
@@ -93,7 +93,8 @@ def parse_options (argv, defaults) :
     # defaults
     parser.set_defaults(
         loglevel            = logging.INFO,
-
+        
+        config              = [],
         target_intervals    = [],
     )
     parser.set_defaults(**defaults)
@@ -132,7 +133,7 @@ def process_config_name (name) :
 
 def parse_config (path, defaults) :
     """
-        Parse given config file
+        Parse given config file, returning updated set of configs based on given defaults.
     """
 
     log.debug("loading config: %s", path)
@@ -701,6 +702,32 @@ def _parse_run_targets (options, config, run) :
 
         yield target
 
+def load_configs (configs, confglob='*.conf') :
+    """
+        Load configuration files from given list of config paths; supports loading a conf.d
+    """
+
+    for path in configs :
+        log.debug("%s", path)
+
+        if os.path.isdir(path) :
+            # glob dir: $path/$glob
+            for globpath in glob.glob(os.path.join(path, confglob)) :
+                if os.path.exists(globpath) :
+                    yield globpath
+                else :
+                    raise Exception("Globbed file does not exist: {0}".format(globpath))
+
+        elif os.path.isfile(path) :
+            # normal file
+            yield path
+
+        elif os.path.exists(path) :
+            raise Exception("Unrecognized config file type: {0}".format(path))
+
+        else :
+            raise Exception("Given config file does not exist: {0}".format(path))
+
 def run (options, run_targets) :
     # default config
     config = dict(
@@ -708,13 +735,14 @@ def run (options, run_targets) :
         intervals       = {},
         targets         = {},
     )
-
-    if options.config :
+    
+    # config?
+    for path in load_configs(options.config) :
         # load
         try :
-            config = parse_config(options.config, config)
+            config = parse_config(path, config)
         except ConfigError as e:
-            log.error("Configuration error: %s: %s", options.config, e)
+            log.error("Configuration error: %s: %s", path, e)
             return 2
 
     # targets to run
