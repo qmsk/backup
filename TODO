@@ -1,0 +1,17 @@
+TODO:
+    run other targets even if one target fails due to a error (but fail on bugs...) (base class Exception?)
+
+0.3.0:
+    pvl.backup.mount: mount without readonly fails to omit --options arg
+    XXX: rsync-snapshot clean_interval removes newest items
+    rsync-wrapper: uses /mnt
+    better config error when referencing an undefined interval for [target:$:intervals]
+
+0.4.0:
+    XXX: bad implementation
+        different run-intervals?
+        bi-daily intervals?
+
+0.5.0:
+    config:     split pvl-backup.d configs
+    logging:    less config/source-parsing, more 'real rsync command running'
