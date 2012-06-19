@@ -4,9 +4,9 @@
     SSH authorized_keys command="..." wrapper for rsync.
 
     Testing goes something like:
-        sudo PYTHONPATH=. ./bin/pvlbackup-rsync-wrapper --command 'rsync --server --sender -ax . lvm:asdf:test' -vD
+        sudo PYTHONPATH=. ./bin/pvl.backup-rsync --command 'rsync --server --sender -ax . lvm:asdf:test' -vD
 
-        sudo sh -c "PYTHONPATH=. rsync -e './bin/pvlbackup-rsync-wrapper --debug -C --' -ax testing:lvm:asdf:test test/tmp"
+        sudo sh -c "PYTHONPATH=. rsync -e './bin/pvl.backup-rsync --debug -C --' -ax testing:lvm:asdf:test test/tmp"
 """
 
 from pvl.backup import __version__
@@ -19,7 +19,7 @@ import shlex
 import os
 import logging
 
-log = logging.getLogger()
+log = logging.getLogger('main')
 
 def parse_options (argv) :
     """
@@ -69,6 +69,9 @@ def parse_options (argv) :
     parser.add_option('--snapshot-wait', metavar='SECONDS', default=lvm.LVM_SNAPSHOT_WAIT, type='float',
             help="wait for snapshot to settle after unmounting")
 
+    parser.add_option('--snapshot-retry', metavar='RETRY', default=lvm.LVM_SNAPSHOT_RETRY, type='int',
+            help="retry snapshot removal by given iterations")
+
     # defaults
     parser.set_defaults(
         debug_for   = [],
@@ -80,7 +83,7 @@ def parse_options (argv) :
 
     # configure
     logging.basicConfig(
-        format  = '%(levelname)6s %(name)s : %(funcName)s : %(message)s',
+        format  = argv[0] + ': %(levelname)6s %(name)s : %(funcName)s : %(message)s',
         level   = options.loglevel,
     )
 
@@ -118,7 +121,7 @@ def rsync_wrapper (command, options, local=False) :
         # parse the source path as given by the client, may be a real path or pseudo-path
         source = rsync.parse_source(path,
                 restrict_path       = options.restrict_path,
-                lvm_opts            = dict(size = options.snapshot_size, wait = options.snapshot_wait),
+                lvm_opts            = dict(size=options.snapshot_size, wait=options.snapshot_wait, retry=options.snapshot_retry),
             )
 
     except RSyncCommandFormatError, e:

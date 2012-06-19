@@ -19,7 +19,7 @@ import shutil, glob
 import datetime
 import logging
 
-log = logging.getLogger()
+log = logging.getLogger('main')
 
 # command-line options, global state
 options = None
@@ -105,7 +105,7 @@ def parse_options (argv, defaults) :
 
     # configure
     logging.basicConfig(
-        format  = '%(processName)s: %(name)s: %(levelname)s %(funcName)s : %(message)s',
+        format  = argv[0] + ': %(name)s: %(levelname)s %(funcName)s : %(message)s',
         level   = options.loglevel,
     )
 
