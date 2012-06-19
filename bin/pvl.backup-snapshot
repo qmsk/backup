@@ -296,6 +296,13 @@ class Interval (object) :
     def __str__ (self) :
         return self.name
 
+class SnapshotError (Exception) :
+    """
+        An error handling Target.snapshot()
+    """
+
+    pass
+
 class Target (object) :
     """
         A target run, i.e. a rsync-snapshot destination dir
@@ -412,6 +419,8 @@ class Target (object) :
     def snapshot (self, options, now) :
         """
             Perform the rsync from our source to self.snapshot_dir.
+
+            Raises rsync.RsyncError or SnapshotError.
         """
        
         # new snapshot
@@ -420,7 +429,7 @@ class Target (object) :
         temp_path = os.path.join(self.snapshots_dir, 'tmp')
 
         if os.path.exists(temp_path) :
-            raise Exception("Old temp snapshot dir remains, please clean up: {path}".format(path=temp_path))
+            raise SnapshotError("Old temp snapshot dir remains, please clean up: {path}".format(path=temp_path))
 
         # link-dest from current?
         if os.path.exists(self.current_path) :
@@ -449,14 +458,24 @@ class Target (object) :
         # to tempdir
         log.debug("rsync %s -> %s", self.source, temp_path)
 
-        # run the rsync.RSyncServer; None as a placeholder will get replaced with the actual source
-        self.source.execute(invoke.optargs(**opts), srcdst=(None, temp_path))
+        try :
+            # run the rsync.RSyncServer; None as a placeholder will get replaced with the actual source
+            self.source.execute(invoke.optargs(**opts), srcdst=(None, temp_path))
 
-        # move in to final name
-        log.debug("rename %s -> %s", temp_path, snapshot_path)
-        os.rename(temp_path, snapshot_path)
+        except rsync.RsyncError as ex :
+            # XXX:  leaves temp_path in place, which must be removed or cleaned up..
+            #       maybe use {snapshot_name}.tmp instead?
+            log.warn("%s: rsync failed:", self, exc_info=ex)
 
-        return snapshot_name
+            # run() handles this
+            raise
+
+        else :
+            # move in to final name
+            log.debug("rename %s -> %s", temp_path, snapshot_path)
+            os.rename(temp_path, snapshot_path)
+
+            return snapshot_name
 
     def interval (self, options, interval, now, snapshot_name) :
         """
@@ -618,6 +637,7 @@ class Target (object) :
         """
 
         # initial rsync
+        # may fail with RsyncError
         snapshot_name = self.snapshot(options, now)
 
         # update current
@@ -675,15 +695,28 @@ class Target (object) :
             now = datetime.datetime.now()
 
             log.debug("%s: started snapshot run at: %s", self, now)
+            
+            try :
+                # snapshot + current
+                snapshot_name = self.run_snapshot(options, now)
 
-            # snapshot + current
-            snapshot_name = self.run_snapshot(options, now)
+            except rsync.RsyncError as ex :
+                # failed, don't update run intervals or such
+                log.error("%s: snapshot rsync failed: %s", self, ex)
+
+                return 1
+
+            except SnapshotError as ex :
+                # misc. failure
+                log.error("%s: %s", self, ex)
+
+                return 2
 
             # intervals?
             self.run_intervals(options, now, snapshot_name)
 
         # ok
-        return 1
+        return 0
 
     def __str__ (self) :
         return self.name
