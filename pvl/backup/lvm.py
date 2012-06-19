@@ -17,6 +17,9 @@ LVM_SNAPSHOT_SIZE   = '5G'
 # number of seconds to wait for lvm snapshot to settle after unmount..
 LVM_SNAPSHOT_WAIT   = 5
 
+# number of times to retry removal, due to lvm/udev bug..
+LVM_SNAPSHOT_RETRY  = 5
+
 class LVMError (Exception) :
     pass
 
@@ -67,7 +70,7 @@ class LVM (object) :
         return LVMVolume(self, name)
 
     @contextlib.contextmanager
-    def snapshot (self, base, wait=LVM_SNAPSHOT_WAIT, **opts) :
+    def snapshot (self, base, wait=LVM_SNAPSHOT_WAIT, retry=LVM_SNAPSHOT_RETRY, **opts) :
         """
             A Context Manager for handling an LVMSnapshot.
 
@@ -76,10 +79,11 @@ class LVM (object) :
             with lvm.snapshot(lv) as snapshot : ...
 
                 wait        - wait given interval for the snapshot device to settle before unmounting it
+                retry       - retry removal given number of times
                 **opts      - LVMSnapshot.create() options (e.g. size)
         """
 
-        log.debug("creating snapshot from {base}: wait={wait} {opts}".format(base=base, wait=wait, opts=opts))
+        log.debug("creating snapshot from {base}: wait={wait}, retry={retry} {opts}".format(base=base, wait=wait, retry=retry, opts=opts))
         snapshot = LVMSnapshot.create(self, base, **opts)
 
         try :
@@ -87,17 +91,43 @@ class LVM (object) :
             yield snapshot
 
         finally:
-            if wait :
-                # XXX: there's some timing bug with an umount leaving the LV open, do we need to wait for it to get closed after mount?
-                #       https://bugzilla.redhat.com/show_bug.cgi?id=577798
-                #       some udev event bug, possibly fixed in lvm2 2.02.86?
-                # try to just patiently wait for it to settle down... if this isn't enough, we need some dmremove magic
-                log.debug("cleanup: waiting %.2f seconds for snapshot volume to settle...", wait)
-                time.sleep(wait)
+            # XXX: there's some common udev bug with removing lvm snapshots
+            #       https://bugzilla.redhat.com/show_bug.cgi?id=577798
+            #       http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=618016
+            #       possibly fixed in lvm2 2.02.86?
+            # try to just patiently wait for it to settle down... then retry... if this isn't enough, we need some dmremove magic?
+            while True :
+                # wait..
+                if wait :
+                    log.debug("%s: cleanup: waiting %.2f seconds for snapshot volume to settle...", snapshot, wait)
+                    time.sleep(wait)
 
-            # cleanup
-            log.debug("cleanup: {0}".format(snapshot))
-            snapshot.close()
+                # lvremove
+                try :
+                    log.debug("%s: cleanup", snapshot)
+                    snapshot.close()
+
+                except InvokeError as ex :
+                    if ex.exit != 5 :
+                        # lvremove sez "Can't remove open logical volume ..." -> exit(5);
+                        raise
+                    
+                    # retry counter?
+                    if retry :
+                        log.warn("%s: cleanup: lvremove failed, retrying...", snapshot)
+                        retry -= 1
+
+                        # retry
+                        continue
+
+                    else :
+                        # failed
+                        log.error("%s: cleanup: lvremove failed, aborting...", snapshot)
+                        raise
+
+                else :
+                    # done
+                    break
 
     def __str__ (self) :
         return self.name
@@ -230,10 +260,7 @@ class LVMSnapshot (LVMVolume) :
             Remove snapshot volume.
         """
 
-        # XXX: can't deactivate snapshot volume
-        #self.lvm.command('lvchange', name, available='n')
-
-        # XXX: risky!
+        # don't typo me!
         self.lvm.command('lvremove', '-f', self.lvm_path)
 
     def __repr__ (self) :
