@@ -20,16 +20,32 @@ RSYNC = '/usr/bin/rsync'
 def rsync (source, dest, **opts) :
     """
         Run rsync.
+
+        Raises RsyncError if rsync fails.
+
+        XXX: never used anywhere?
     """
 
-    invoke.command(RSYNC, source, dest, **opts)
+    try :
+        invoke.command(RSYNC, source, dest, **opts)
+
+    except invoke.InvokeError as ex :
+        raise RsyncError(ex)
 
 class RSyncCommandFormatError (Exception) :
     """
-        Improper rsync command
+        Improper rsync command/source.
     """
 
     pass
+
+class RsyncError (Exception) :
+    """
+        Rsync command invocation failed.
+    """
+    
+    pass
+
 
 class RSyncServer (object) :
     """
@@ -54,8 +70,12 @@ class RSyncServer (object) :
 
         log.info("rsync %ss %s %s", ' '.join(options), src, dst)
         
-        # invoke directly, no option-handling, nor stdin/out redirection
-        invoke.invoke(RSYNC, options + [ src, dst ], data=False)
+        try :
+            # invoke directly, no option-handling, nor stdin/out redirection
+            invoke.invoke(RSYNC, options + [ src, dst ], data=False)
+
+        except invoke.InvokeError as ex :
+            raise RsyncError(ex)
 
 class RSyncFSServer (RSyncServer) :
     """
