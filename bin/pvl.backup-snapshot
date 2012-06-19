@@ -412,8 +412,6 @@ class Target (object) :
     def snapshot (self, options, now) :
         """
             Perform the rsync from our source to self.snapshot_dir.
-
-            XXX: allocate snapshot_name here?
         """
        
         # new snapshot
@@ -583,8 +581,8 @@ class Target (object) :
         # discover all snapshots
         snapshots = set(os.listdir(snapshots_path))
 
-        # clean out special names
-        snapshots = snapshots - set(['new'])
+        # XXX: and ignore special names?
+        snapshots = snapshots - set(['tmp'])
 
         ## compare
         used = snapshots & found
