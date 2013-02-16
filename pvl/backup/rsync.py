@@ -14,7 +14,6 @@ import logging
 
 log = logging.getLogger('pvl.backup.rsync')
 
-# Path to rsync binary
 RSYNC = '/usr/bin/rsync'
 
 def rsync (source, dest, **opts) :
@@ -52,13 +51,15 @@ class RSyncServer (object) :
         rsync server-mode execution.
     """
 
-    def _execute (self, options, srcdst, path) :
+    def _execute (self, options, srcdst, path, sudo=False) :
         """
             Underlying rsync just reads from filesystem.
 
                 options     - list of rsync options
                 srcdst      - the (source, dest) pair with None placeholder, as returned by parse_command
                 path        - the real path to replace None with
+
+                sudo        - execute rsync using sudo
         """
     
         # one of this will be None
@@ -69,10 +70,10 @@ class RSyncServer (object) :
         dst = dst or path
 
         log.info("rsync %s %s %s", ' '.join(options), src, dst)
-        
+
         try :
-            # invoke directly, no option-handling, nor stdin/out redirection
-            invoke.invoke(RSYNC, options + [ src, dst ], data=False)
+            # invoke directly; no option-handling, nor stdin/out redirection
+            invoke.invoke(RSYNC, options + [ src, dst ], data=False, sudo=sudo)
 
         except invoke.InvokeError as ex :
             raise RsyncError(ex)
@@ -87,13 +88,13 @@ class RSyncFSServer (RSyncServer) :
 
         self.path = path
 
-    def execute (self, options, srcdst) :
+    def execute (self, options, srcdst, **opts) :
         """
                 options     - list of rsync options
                 srcdst      - the (source, dest) pair with None placeholder, as returned by parse_command
         """
 
-        return self._execute(options, srcdst, self.path)
+        return self._execute(options, srcdst, self.path, **opts)
 
     def __str__ (self) :
         return self.path
@@ -114,13 +115,13 @@ class RSyncRemoteServer (RSyncServer) :
         # glue
         self.path = host + ':' + path
 
-    def execute (self, options, srcdst) :
+    def execute (self, options, srcdst, **opts) :
         """
                 options     - list of rsync options
                 srcdst      - the (source, dest) pair with None placeholder, as returned by parse_command
         """
 
-        return self._execute(options, srcdst, self.path)
+        return self._execute(options, srcdst, self.path, **opts)
 
     def __str__ (self) :
         return self.path
@@ -130,18 +131,21 @@ class RSyncLVMServer (RSyncServer) :
         Backup LVM LV by snapshotting + mounting it.
     """
 
-    def __init__ (self, volume, **opts) :
+    def __init__ (self, vg, lv, sudo=None, **opts) :
         """
-            volume      - the LVMVolume to snapshot
             **opts      - options for LVM.snapshot
         """
 
         RSyncServer.__init__(self)
+        
+        # lvm
+        self.lvm = LVM(vg, sudo=sudo)
+        self.volume = self.lvm.volume(lv)
 
-        self.volume = volume
+        self.sudo = sudo
         self.snapshot_opts = opts
  
-    def execute (self, options, srcdst) :
+    def execute (self, options, srcdst, sudo=False, **opts) :
         """
             Snapshot, mount, execute
 
@@ -161,12 +165,12 @@ class RSyncLVMServer (RSyncServer) :
             # mount
             log.info("Mounting snapshot: %s", snapshot)
 
-            with mount(snapshot.dev_path, name_hint=('lvm_' + snapshot.name + '_'), readonly=True) as mountpoint:
+            with mount(snapshot.dev_path, name_hint=('lvm_' + snapshot.name + '_'), readonly=True, sudo=sudo) as mountpoint:
                 # rsync!
                 log.info("Running rsync: %s", mountpoint)
 
                 # with trailing slash
-                return self._execute(options, srcdst, mountpoint.path + '/')
+                return self._execute(options, srcdst, mountpoint.path + '/', sudo=sudo, **opts)
 
             # cleanup
         # cleanup
@@ -322,10 +326,7 @@ def parse_source (path, restrict_paths=None, allow_remote=True, lvm_opts={}) :
         log.debug("LVM: %s/%s", vg, lv)
 
         # open
-        lvm = LVM(vg)
-        volume = lvm.volume(lv)
-
-        return RSyncLVMServer(volume, **lvm_opts)
+        return RSyncLVMServer(vg, lv, **lvm_opts)
 
     elif ':' in path and allow_remote :
         host, path = path.split(':', 1)
