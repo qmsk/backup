@@ -7,6 +7,8 @@ import logging
 
 log = logging.getLogger('pvl.backup.invoke')
 
+SUDO = '/usr/bin/sudo'
+
 class InvokeError (Exception) :
     def __init__ (self, cmd, exit) :
         self.cmd = cmd
@@ -15,18 +17,19 @@ class InvokeError (Exception) :
     def __str__ (self) :
         return "{cmd} failed: {exit}".format(cmd=self.cmd, exit=self.exit)
 
-def invoke (cmd, args, data=None) :
+def invoke (cmd, args, data=None, sudo=False) :
     """
         Invoke a command directly.
         
         data:       data to pass in on stdin, returning stdout.
                     if given as False, passes through our process stdin/out
+        sudo:       exec using sudo
 
         Doesn't give any data on stdin, and keeps process stderr.
         Returns stdout.
     """
     
-    log.debug("{cmd} {args}".format(cmd=cmd, args=' '.join(args)))
+    log.debug("{sudo}{cmd} {args}".format(sudo=('sudo ' if sudo else ''), cmd=cmd, args=' '.join(args)))
 
     if data is False :
         # keep process stdin/out
@@ -34,7 +37,12 @@ def invoke (cmd, args, data=None) :
     else :
         io = subprocess.PIPE
 
-    p = subprocess.Popen([cmd] + args, stdin=io, stdout=io)
+    args = [cmd] + args
+
+    if sudo :
+        args = [SUDO] + args
+
+    p = subprocess.Popen(args, stdin=io, stdout=io)
 
     # get output
     stdout, stderr = p.communicate(input=data)
