@@ -4,15 +4,18 @@ from distutils.core import setup
 import pvl.backup
 
 setup(
-    name            = 'pvl.backup',
+    name            = 'pvl-backup',
     version         = pvl.backup.__version__,
 
-    url             = 'http://hg.qmsk.net/pvl-backup/',
+    url             = 'http://verkko.paivola.fi/hg/pvl-backup/',
     author          = 'Tero Marttila',
     author_email    = 'terom@paivola.fi',
 
     # code
-    packages        = ['pvl', 'pvl.backup'],
+    packages        = [
+        'pvl',
+        'pvl.backup',
+    ],
 
     # binaries
     scripts         = [
