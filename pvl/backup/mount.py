@@ -2,7 +2,7 @@
     Mount filesystems.
 """
 
-from pvl.backup.invoke import command
+from pvl.backup.invoke import invoke, optargs, command
 
 import contextlib
 import os, os.path
@@ -24,16 +24,18 @@ class Mount (object) :
     UMOUNT  = '/bin/umount'
 
 
-    def __init__ (self, dev, mnt, readonly=False) :
+    def __init__ (self, dev, mnt, readonly=False, sudo=None) :
         """
             dev         - device path
             mnt         - mount path
             readonly    - mount readonly
+            sudo        - invoke sudo
         """
 
         self.dev = dev
         self.mnt = mnt
         self.readonly = readonly
+        self.sudo = sudo
 
     @property
     def path (self) :
@@ -66,7 +68,7 @@ class Mount (object) :
             raise MountError("Device does not exist: {dev}".format(dev=self.dev))
 
         # mount
-        command(self.MOUNT, self.dev, self.mnt, options=self.options())
+        invoke(self.MOUNT, optargs(self.dev, self.mnt, options=self.options()), sudo=self.sudo)
 
     def close (self) :
         """
@@ -78,7 +80,7 @@ class Mount (object) :
             raise MountError("Mountpoint is not mounted: {mnt}".format(mnt=self.mnt))
 
         # umount
-        command(self.UMOUNT, self.mnt)
+        invoke(self.UMOUNT, optargs(self.mnt), sudo=self.sudo)
 
     def __repr__ (self) :
         return "Mount(dev={dev}, mnt={mnt})".format(

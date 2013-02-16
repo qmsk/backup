@@ -35,8 +35,14 @@ class LVM (object) :
     # VG name
     name = None
 
-    def __init__ (self, name) :
+    def __init__ (self, name, sudo=None) :
+        """
+            name    - VG name
+            sudo    - invoke sudo
+        """
+
         self.name = name
+        self.sudo = sudo
 
     def lv_name (self, lv) :
         """
@@ -60,7 +66,7 @@ class LVM (object) :
         log.debug("{cmd} {opts} {args}".format(cmd=cmd, args=args, opts=opts))
 
         # invoke
-        invoke(self.LVM, [cmd] + optargs(*args, **opts))
+        invoke(self.LVM, [cmd] + optargs(*args, **opts), sudo=self.sudo)
 
     def volume (self, name) :
         """
