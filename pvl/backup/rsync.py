@@ -68,7 +68,7 @@ class RSyncServer (object) :
         src = src or path
         dst = dst or path
 
-        log.info("rsync %ss %s %s", ' '.join(options), src, dst)
+        log.info("rsync %s %s %s", ' '.join(options), src, dst)
         
         try :
             # invoke directly, no option-handling, nor stdin/out redirection
@@ -187,8 +187,9 @@ def parse_command (command_parts, restrict_server=True, restrict_readonly=True) 
         Returns:
 
             (cmd, options, path, (source, dest))
-
-            path            -> the real source path
+            
+            options         -> list of -options
+            path            -> real source path
             (source, dest)  -> combination of None for path, and the real source/dest
 
     """
@@ -211,6 +212,8 @@ def parse_command (command_parts, restrict_server=True, restrict_readonly=True) 
 
         elif dest is None :
             dest = part
+
+    log.debug("%s: %s", cmd, options)
 
     # options
     have_server = ('--server' in options)
@@ -261,10 +264,12 @@ def parse_command (command_parts, restrict_server=True, restrict_readonly=True) 
     # ok
     return cmd, options, path, (source, dest)
       
-def parse_source (path, restrict_path=False, lvm_opts={}) :
+def parse_source (path, restrict_paths=None, allow_remote=True, lvm_opts={}) :
     """
         Figure out source to rsync from, based on pseudo-path given in rsync command.
-
+            
+            restrict_paths  - raise RsyncCommandFormatError if source path is not under any of the given sources.
+            allow_remote    - allow remote backups?
             lvm_opts        - dict of **opts for RSyncLVMServer
     """
 
@@ -279,13 +284,17 @@ def parse_source (path, restrict_path=False, lvm_opts={}) :
         path += '/'
 
     # verify path
-    if restrict_path :
-        if not path.startswith(restrict_path) :
-            raise RSyncCommandFormatError("Restricted path ({restrict})".format(restrict=restrict_path))
+    if restrict_paths :
+        for restrict_path in restrict_paths :
+            if path.startswith(restrict_path) :
+                # ok
+                break
+        else :
+            # fail
+            raise RSyncCommandFormatError("Restricted path".format())
 
     if path.startswith('/') :
         # direct filesystem path
-        # XXX: how to handle=
         log.debug("filesystem: %s", path)
 
         return RSyncFSServer(path)
@@ -318,7 +327,7 @@ def parse_source (path, restrict_path=False, lvm_opts={}) :
 
         return RSyncLVMServer(volume, **lvm_opts)
 
-    elif ':' in path :
+    elif ':' in path and allow_remote :
         host, path = path.split(':', 1)
 
         # remote host

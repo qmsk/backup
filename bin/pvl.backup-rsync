@@ -1,9 +1,11 @@
 #!/usr/bin/python
 
 """
-    SSH authorized_keys command="..." wrapper for rsync.
+    SSH authorized_keys command="..." wrapper for rsync sender/server, with additional support for LVM snapshots.
 
-    Testing goes something like:
+    Testing:
+        PYTHONPATH=. ./bin/pvl.backup-rsync -- -rlptx /etc/apache2 test/foo
+
         sudo PYTHONPATH=. ./bin/pvl.backup-rsync --command 'rsync --server --sender -ax . lvm:asdf:test' -vD
 
         sudo sh -c "PYTHONPATH=. rsync -e './bin/pvl.backup-rsync --debug -C --' -ax testing:lvm:asdf:test test/tmp"
@@ -51,7 +53,7 @@ def parse_options (argv) :
             help="rsync command to execute")
 
     parser.add_option('-C', '--given-command', action='store_true', default=False,
-            help="use given command in `rsync -e %prog` format")
+            help="use given command in `rsync -e '%prog -C --' ...` format")
 
     parser.add_option('-n', '--noop', action='store_true', default=False,
             help="Parse command, but do not execute")
@@ -59,8 +61,11 @@ def parse_options (argv) :
     parser.add_option('-R', '--readonly',   action='store_true', default=False,
             help="restrict to read/source mode")
 
-    parser.add_option('-P', '--restrict-path', metavar='PATH', default=False,
+    parser.add_option('-P', '--restrict-path', metavar='PATH', action='append',
             help="restrict to given path prefix")
+
+    parser.add_option('--allow-remote',     action='store_true', default=False,
+            help="Allow remote rsync sources")
 
     # lvm options
     parser.add_option('-L', '--snapshot-size', metavar='SIZE', default=lvm.LVM_SNAPSHOT_SIZE,
@@ -76,6 +81,8 @@ def parse_options (argv) :
     parser.set_defaults(
         debug_for   = [],
         loglevel    = logging.INFO,
+
+        restrict_path   = [],
     )
 
     # parse
@@ -93,9 +100,9 @@ def parse_options (argv) :
 
     return options, args
 
-def rsync_wrapper (command, options, local=False) :
+def rsync_wrapper (options, command, local=False) :
     """
-        Wrap given rsync command.
+        Wrap given rsync command, parsing options/path, determining source, and running rsync in the source.
 
         Parses the command, the source path, and then executes rsync within the source path (which may be a special
         pseudo-path with additional handling).
@@ -120,8 +127,13 @@ def rsync_wrapper (command, options, local=False) :
     try :
         # parse the source path as given by the client, may be a real path or pseudo-path
         source = rsync.parse_source(path,
-                restrict_path       = options.restrict_path,
-                lvm_opts            = dict(size=options.snapshot_size, wait=options.snapshot_wait, retry=options.snapshot_retry),
+                restrict_paths      = options.restrict_path,
+                allow_remote        = options.allow_remote,
+                lvm_opts            = dict(
+                    size    = options.snapshot_size, 
+                    wait    = options.snapshot_wait,
+                    retry   = options.snapshot_retry,
+                ),
             )
 
     except RSyncCommandFormatError, e:
@@ -135,13 +147,12 @@ def rsync_wrapper (command, options, local=False) :
 
     # execute
     try :
-        # run rsync within the source (may perform additional stuff like snapshotting...)
+        # run rsync within the source (may perform additional stuff like snapshot...)
         source.execute(rsync_options, srcdst)
 
     except InvokeError, e:
         log.error("%s failed: %d", e.cmd, e.exit)
         return e.exit
-
 
     # ok
     return 0
@@ -182,7 +193,7 @@ def main (argv) :
 
     # run
     try :
-        return rsync_wrapper(command_parts, options, local)
+        return rsync_wrapper(options, command_parts, local=local)
 
     except Exception, e:
         log.error("Internal error:", exc_info=e)
