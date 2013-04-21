@@ -1,7 +1,3 @@
-# Namespace package
-# http://docs.python.org/library/pkgutil.html#pkgutil.extend_path
-
-from pkgutil import extend_path
-
-# magic to support further pvl.foo packages
-__path__ == extend_path(__path__, __name__)
+## Namespace package
+# http://pythonhosted.org/distribute/setuptools.html#namespace-packages
+__import__('pkg_resources').declare_namespace(__name__)

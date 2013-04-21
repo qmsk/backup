@@ -1,17 +1,28 @@
+# encoding: utf-8
+
 from distutils.core import setup
 
 # XXX: for determining version
-import pvl.backup
+from pvl.backup import __version__
 
 setup(
     name            = 'pvl-backup',
-    version         = pvl.backup.__version__,
-
+    version         = __version__,
+    description     = "Päivölä rsync backup utilities",
     url             = 'http://verkko.paivola.fi/hg/pvl-backup/',
+
     author          = 'Tero Marttila',
     author_email    = 'terom@paivola.fi',
 
-    # code
+    # deps
+    install_requires    = [
+        # pvl.args
+        # pvl.invoke
+        'pvl-common',
+    ],
+ 
+    # lib
+    namespace_packages = [ 'pvl' ],
     packages        = [
         'pvl',
         'pvl.backup',

@@ -8,4 +8,5 @@ syntax: regexp
 
 ^build/
 ^dist/
+^opt/
 ^MANIFEST$
