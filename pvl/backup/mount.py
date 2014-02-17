@@ -61,7 +61,7 @@ class Mount (object) :
         if not os.path.isdir(self.mnt) :
             raise MountError("Mountpoint is not a directory: {mnt}".format(mnt=self.mnt))
 
-        if os.path.ismount(self.mnt) :
+        if self.is_mounted() :
             raise MountError("Mountpoint is already mounted: {mnt}".format(mnt=self.mnt))
 
         if not os.path.exists(self.dev) :
@@ -70,13 +70,25 @@ class Mount (object) :
         # mount
         invoke(self.MOUNT, optargs(self.dev, self.mnt, options=self.options()), sudo=self.sudo)
 
+    def is_mounted (self) :
+        """
+            Test if the given mountpoint is mounted.
+        """
+        
+        # workaround http://bugs.python.org/issue2466
+        if os.path.exists(self.mnt) and not os.path.exists(os.path.join(self.mnt, '.')) :
+            # this is a sign of a mountpoint that we do not have access to
+            return True
+
+        return os.path.ismount(self.mnt)
+
     def close (self) :
         """
             Un-mount
         """
 
         # check
-        if not os.path.ismount(self.mnt):
+        if not self.is_mounted() :
             raise MountError("Mountpoint is not mounted: {mnt}".format(mnt=self.mnt))
 
         # umount
@@ -127,7 +139,12 @@ def mount (dev, mnt=None, name_hint='tmp', **kwargs) :
         finally:
             # cleanup
             log.debug("cleanup: %s", mount)
-            mount.close()
+
+            try :
+                mount.close()
+
+            except Exception as ex :
+                log.warning("cleanup: %s: %s", mount, ex)
 
     finally:
         if tmpdir :
