@@ -10,6 +10,7 @@
     Then archives <dst>/current to <dst>/<period>/<date> using --link-dest.
 """
 
+import pvl.args
 from pvl.backup import __version__
 from pvl.backup import rsync, invoke
 
@@ -39,14 +40,7 @@ def parse_options (argv, defaults) :
             description = __doc__,
     )
 
-    # logging
-    general = optparse.OptionGroup(parser, "General Options")
-
-    general.add_option('-q', '--quiet',      dest='loglevel', action='store_const', const=logging.WARNING, help="Less output")
-    general.add_option('-v', '--verbose',    dest='loglevel', action='store_const', const=logging.INFO,  help="More output")
-    general.add_option('-D', '--debug',      dest='loglevel', action='store_const', const=logging.DEBUG, help="Even more output")
-
-    parser.add_option_group(general)
+    parser.add_option_group(pvl.args.parser(parser, config=False))
 
     # rsync
     rsync = optparse.OptionGroup(parser, "rsync Options")
@@ -73,7 +67,7 @@ def parse_options (argv, defaults) :
         help="Don't actually clean anything")
 
     #
-    parser.add_option('-c', '--config',     metavar='FILE/DIR', action='append',    # multi
+    parser.add_option('-c', '--config',    metavar='FILE/DIR', action='append',    # multi
         help="Load configuration file(s)")
 
     parser.add_option('-r', '--run',        metavar='NAME',
@@ -92,22 +86,16 @@ def parse_options (argv, defaults) :
 
     # defaults
     parser.set_defaults(
-        loglevel            = logging.INFO,
-        
         config              = [],
         target_intervals    = [],
     )
     parser.set_defaults(**defaults)
 
-    
     # parse
     options, args = parser.parse_args(argv[1:])
-
-    # configure
-    logging.basicConfig(
-        format  = argv[0] + ': %(name)s: %(levelname)s %(funcName)s : %(message)s',
-        level   = options.loglevel,
-    )
+    
+    # general logging/etc
+    pvl.args.apply(options)
 
     if options.clean :
         options.clean_intervals = options.clean_snapshots = options.clean
