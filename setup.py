@@ -18,7 +18,7 @@ setup(
     install_requires    = [
         # pvl.args
         # pvl.invoke
-        'pvl-common >= 0.2',
+        'pvl-common >= 0.5.1',
     ],
  
     # lib
