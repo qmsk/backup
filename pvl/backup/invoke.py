@@ -50,6 +50,8 @@ def invoke (cmd, args, data=None, sudo=False) :
     # get output
     stdout, stderr = p.communicate(input=data)
 
+    log.debug("%s exit %d", cmd, p.returncode)
+
     if p.returncode :
         # failed
         raise InvokeError(cmd, p.returncode, stderr)
