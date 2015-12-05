@@ -23,19 +23,33 @@ def rsync (options, paths, sudo=False):
         Raises InvokeError
     """
 
-    # invoke directly; no option-handling, nor stdin/out redirection
-    invoke.invoke(RSYNC, options + paths, data=False, sudo=sudo)
+    log.info("%s %s", ' '.join(options), ' '.join(paths))
+
+    try:
+        # invoke directly; no option-handling, nor stdin/out redirection
+        invoke.invoke(RSYNC, options + paths, data=False, sudo=sudo)
+    except invoke.InvokeError as error:
+        raise InvokeError(error.exit, error.stderr)
 
 class Error (Exception):
-    """
-        Rsync command invocation failed.
-    """
-    
     pass
 
-class CommandError (Exception):
+class InvokeError (Error):
+    def __init__(self, exit, stderr):
+        self.exit = exit
+
+        super(InvokeError, self).__init__(stderr)
+
+class CommandError (Error):
     """
-        Improper rsync command/source.
+        Invalid rsync command.
+    """
+
+    pass
+
+class SourceError (Error):
+    """
+        Invalid rsync source
     """
 
     pass
@@ -61,7 +75,7 @@ class Source (object):
         """
             Run with --server --sender options.
         """
-        
+
         with self.mount() as path:
             return rsync(options, ['.', path], sudo=self.sudo)
 
@@ -69,7 +83,7 @@ class Source (object):
         """
             Run with the given destination.
         """
-
+        
         with self.mount() as path:
             return rsync(options, [path, dest], sudo=self.sudo)
 
@@ -238,6 +252,9 @@ def parse_source (path, restrict_paths=None, allow_remote=True, sudo=None, lvm_o
             lvm_opts        - **opts for LVMSource
     """
 
+    if not path:
+        raise SourceError("No path given")
+
     endslash = path.endswith('/')
         
     # normalize
@@ -256,7 +273,7 @@ def parse_source (path, restrict_paths=None, allow_remote=True, sudo=None, lvm_o
                 break
         else:
             # fail
-            raise CommandError("Restricted path".format())
+            raise SourceError("Restricted path")
 
     if path.startswith('/'):
         # direct filesystem path
@@ -280,10 +297,10 @@ def parse_source (path, restrict_paths=None, allow_remote=True, sudo=None, lvm_o
                 vg, path = path.split('/', 1)
 
             else:
-                raise CommandError("Invalid lvm pseudo-path {path}: unrecognized vg/lv separator".format(path=path))
+                raise ValueError("Invalid vg/lv separator")
 
-        except ValueError, e:
-            raise CommandError("Invalid lvm pseudo-path: {path}: {error}".format(path=path, error=e))
+        except ValueError as error:
+            raise SourceError("Invalid lvm pseudo-path: {error}".format(error=error))
 
         # LVM LV, and path within LV
         if '/' in path:
@@ -301,7 +318,10 @@ def parse_source (path, restrict_paths=None, allow_remote=True, sudo=None, lvm_o
                 lvm_opts        = lvm_opts,
         )
 
-    elif ':' in path and allow_remote:
+    elif ':' in path:
+        if not allow_remote:
+            raise SourceError("Invalid remote path")
+
         # remote host
         log.debug("remote: %s:%s", host, path)
 
@@ -311,5 +331,5 @@ def parse_source (path, restrict_paths=None, allow_remote=True, sudo=None, lvm_o
        
     else:
         # invalid
-        raise CommandError("Unrecognized backup path: {path}".format(path=path))
+        raise SourceError("Unknown path format")
 
