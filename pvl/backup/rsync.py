@@ -20,15 +20,11 @@ def rsync (options, paths, sudo=False):
     """
         Run rsync.
 
-        Raises RsyncError if rsync fails.
+        Raises InvokeError
     """
 
-    try:
-        # invoke directly; no option-handling, nor stdin/out redirection
-        invoke.invoke(RSYNC, options + paths, data=False, sudo=sudo)
-
-    except invoke.InvokeError as error:
-        raise Error(error)
+    # invoke directly; no option-handling, nor stdin/out redirection
+    invoke.invoke(RSYNC, options + paths, data=False, sudo=sudo)
 
 class Error (Exception):
     """
