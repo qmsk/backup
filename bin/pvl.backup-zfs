@@ -1,0 +1,145 @@
+#!/usr/bin/python
+
+"""
+    Manage ZFS snapshots from rsync sources
+"""
+
+import datetime
+import logging
+import optparse
+import pvl.args
+import pvl.backup.invoke
+import pvl.backup.rsync
+import pvl.backup.zfs
+
+from pvl.backup import __version__
+
+log = logging.getLogger('pvl.backup-zfs')
+
+class Error (Exception):
+    pass
+
+class ZFSTarget (object):
+    """
+        ZFS rsync snapshot management
+    """
+        
+    snapshot_strftime = '%Y%m%d-%H%M%S'
+
+    # rsync options, in invoke.optargs format
+    rsync_options = {
+        'archive':          True,
+        'hard-links':       True,
+        'one-file-system':  True,
+        'numeric-ids':      True,
+        'delete':           True,
+    }
+
+    @classmethod
+    def config (cls, name,
+            source,
+    ):
+        try:
+            rsync_source    = pvl.backup.rsync.parse_source(source)
+        except pvl.backup.rsync.SourceError as error:
+            raise Error("--source=%s: %s", source, error)
+
+        return cls(pvl.backup.zfs.Filesystem(name),
+                rsync_source    = rsync_source,
+        )
+
+    def __init__ (self, zfs, rsync_source):
+        if not zfs.exists:
+            raise Error("No such ZFS: {zfs}".format(zfs=zfs))
+
+        self.zfs = zfs
+        self.rsync_source = rsync_source
+
+    def __str__ (self):
+        return str(self.zfs)
+
+    def rsync (self, dest):
+        """
+            rsync source to given dest.
+
+            Raises pvl.backup.rsync.Error
+        """
+        
+        rsync_options = pvl.backup.invoke.optargs(**self.rsync_options)
+
+        try:
+            # run the rsync.RSyncServer; None as a placeholder will get replaced with the actual source
+            self.rsync_source.rsync(rsync_options, dest)
+
+        except pvl.backup.rsync.Error as error:
+            log.warn("%s rsync error: %s", self, error)
+            raise
+ 
+    def snapshot (self, now):
+        """
+            Create a new snapshot.
+
+            Raises Error.
+        """
+        
+        snapshot_name = now.strftime(self.snapshot_strftime)
+
+        mountpoint = self.zfs.mountpoint
+
+        if not mountpoint:
+            raise Error("ZFS destination is not mounted: %s", self.zfs)
+        
+        # update the zfs contents using rsync
+        self.rsync(dest=mountpoint)
+       
+        # tag as a snapshot
+        try:
+            self.zfs.snapshot(snapshot_name)
+
+        except pvl.backup.zfs.Error as error:
+            log.warn("%s@%s snapshot error: %s", self, snapshot_name, error)
+            raise
+        
+        return snapshot_name
+
+    def backup (self):
+        """
+            Run backup, managing snapshots.
+        """
+
+        now = datetime.datetime.now()
+
+        log.info("%s: backup %s", self, now)
+
+        snapshot = self.snapshot(now)
+        
+        log.info("%s: snapshot %s", self, snapshot)
+
+def main (argv):
+    parser = optparse.OptionParser()
+    parser.add_option_group(pvl.args.parser(parser))
+
+    parser.add_option('--source',
+            help="Backup source")
+
+    options, args = pvl.args.parse(parser, argv, package='backup', module='zfs')
+
+    for target in args:
+        try:
+            target = ZFSTarget.config(target,
+                    source      = options.source,
+            )
+        except Error as error:
+            log.error("%s: %s", target, error)
+            return 1
+
+        try:
+            target.backup()
+        except Error as error:
+            log.exception("%s: %s", target, error)
+            return 2
+
+    return 0
+    
+if __name__ == '__main__':
+    pvl.args.main(main)
