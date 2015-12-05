@@ -25,7 +25,7 @@ class CommandError (Error):
 
 def zfs(*args):
     try:
-        out = invoke.invoke(ZFS, list(args))
+        out = invoke.command(ZFS, *args)
     except invoke.InvokeError as error:
         if error.exit == 1:
             raise ZFSError(error.stderr)
@@ -74,11 +74,41 @@ class Filesystem (object):
         zfs('create', self.name)
 
     def snapshot(self, name):
-        zfs('snapshot', '{filesystem}@{snapname}'.format(filesystem=self.name, snapname=name))
+        """
+            Create and return a new Snapshot()
+
+            Raises ZFSError if the snapshot already exists.
+        """
+
+        snapshot = Snapshot(self, name)
+        snapshot._create()
+
+        return snapshot
 
     def list_snapshots(self):
-        for name in zfs('list', '-H', '-tsnapshot', '-oname', '-r', self.name):
-            filesystem, snapshot = name.split('@', 1)
+        for name, in zfs('list', '-H', '-tsnapshot', '-oname', '-r', self.name):
+            snapshot = Snapshot.parse(name)
+
+            log.debug("%s: snapshot %s", self, snapshot)
 
             yield snapshot
 
+    def bookmark(self, snapshot, bookmark):
+        zfs('bookmark', '{snapshot}@{filesystem}'.format(snapshot=snapshot, filesystem=self.name), bookmark)
+
+class Snapshot (object):
+    @classmethod
+    def parse(cls, name):
+        filesystem, snapshot = name.split('@', 1)
+
+        return cls(filesystem, snapshot)
+
+    def __init__ (self, filesystem, name):
+        self.filesystem = filesystem
+        self.name = name
+
+    def __str__ (self):
+        return '{filesystem}@{name}'.format(name=self.name, filesystem=self.filesystem)
+
+    def _create(self):
+        zfs('snapshot', self)
