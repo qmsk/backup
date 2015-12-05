@@ -56,7 +56,7 @@ def rsync_wrapper (options, command, server=False):
                 ),
             )
 
-    except pvl.backup.rsync.CommandError as error:
+    except pvl.backup.rsync.SourceError as error:
         log.error("Invalid rsync source: %r: %s", source_path, error)
         return 2
 
@@ -70,9 +70,12 @@ def rsync_wrapper (options, command, server=False):
         # run rsync within the source (may perform additional stuff like snapshot...)
         rsync_source.rsync_sender(rsync_options)
 
-    except pvl.backup.invoke.InvokeError as error:
-        log.error("%s failed: %d", error.cmd, error.exit)
+    except pvl.backup.rsync.InvokeError as error:
+        log.error("rsync failed: %s", error)
         return error.exit
+    
+    else:
+        log.debug("rsync ok")
 
     # ok
     return 0
