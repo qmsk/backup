@@ -11,13 +11,14 @@ log = logging.getLogger('pvl.backup.invoke')
 
 SUDO = '/usr/bin/sudo'
 
-class InvokeError (Exception) :
-    def __init__ (self, cmd, exit) :
+class InvokeError (Exception):
+    def __init__ (self, cmd, exit, stderr):
         self.cmd = cmd
         self.exit = exit
+        self.stderr = stderr
 
     def __str__ (self) :
-        return "{cmd} failed: {exit}".format(cmd=self.cmd, exit=self.exit)
+        return "{self.cmd} exit {self.exit}: {self.stderr}".format(self=self)
 
 def invoke (cmd, args, data=None, sudo=False) :
     """
@@ -44,14 +45,14 @@ def invoke (cmd, args, data=None, sudo=False) :
     if sudo :
         args = [SUDO] + args
 
-    p = subprocess.Popen(args, stdin=io, stdout=io)
+    p = subprocess.Popen(args, stdin=io, stdout=io, stderr=subprocess.PIPE)
 
     # get output
     stdout, stderr = p.communicate(input=data)
 
     if p.returncode :
         # failed
-        raise InvokeError(cmd, p.returncode)
+        raise InvokeError(cmd, p.returncode, stderr)
 
     return stdout
 
