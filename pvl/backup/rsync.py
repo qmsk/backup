@@ -4,277 +4,242 @@
     Apologies for the 'RSync' nomenclature
 """
 
-from pvl.backup.lvm import LVM, LVMVolume, LVMSnapshot
-from pvl.backup.mount import mount
-from pvl.backup import invoke
-
-import os.path
-
+import contextlib
 import logging
+import os.path
+import pvl.backup.mount
+
+from pvl.backup.lvm import LVM, LVMVolume, LVMSnapshot
+from pvl.backup import invoke
 
 log = logging.getLogger('pvl.backup.rsync')
 
 RSYNC = '/usr/bin/rsync'
 
-def rsync (source, dest, **opts) :
+def rsync (options, paths, sudo=False):
     """
         Run rsync.
 
         Raises RsyncError if rsync fails.
-
-        XXX: never used anywhere?
     """
 
-    try :
-        invoke.command(RSYNC, source, dest, **opts)
+    try:
+        # invoke directly; no option-handling, nor stdin/out redirection
+        invoke.invoke(RSYNC, options + paths, data=False, sudo=sudo)
 
-    except invoke.InvokeError as ex :
-        raise RsyncError(ex)
+    except invoke.InvokeError as error:
+        raise Error(error)
 
-class RSyncCommandFormatError (Exception) :
-    """
-        Improper rsync command/source.
-    """
-
-    pass
-
-class RsyncError (Exception) :
+class Error (Exception):
     """
         Rsync command invocation failed.
     """
     
     pass
 
-
-class RSyncServer (object) :
+class CommandError (Exception):
     """
-        rsync server-mode execution.
-    """
-
-    def _execute (self, options, srcdst, path, sudo=False) :
-        """
-            Underlying rsync just reads from filesystem.
-
-                options     - list of rsync options
-                srcdst      - the (source, dest) pair with None placeholder, as returned by parse_command
-                path        - the real path to replace None with
-
-                sudo        - execute rsync using sudo
-        """
-    
-        # one of this will be None
-        src, dst = srcdst
-
-        # replace None -> path
-        src = src or path
-        dst = dst or path
-
-        log.info("rsync %s %s %s", ' '.join(options), src, dst)
-
-        try :
-            # invoke directly; no option-handling, nor stdin/out redirection
-            invoke.invoke(RSYNC, options + [ src, dst ], data=False, sudo=sudo)
-
-        except invoke.InvokeError as ex :
-            raise RsyncError(ex)
-
-class RSyncFSServer (RSyncServer) :
-    """
-        Normal filesystem backup.
+        Improper rsync command/source.
     """
 
-    def __init__ (self, path) :
-        RSyncServer.__init__(self)
+    pass
 
+class Source (object):
+    """
+        rsync source
+    """
+
+    def __init__ (self, path, sudo=None):
         self.path = path
+        self.sudo = sudo
 
-    def execute (self, options, srcdst, **opts) :
+    @contextlib.contextmanager
+    def mount(self):
         """
-                options     - list of rsync options
-                srcdst      - the (source, dest) pair with None placeholder, as returned by parse_command
-        """
-
-        return self._execute(options, srcdst, self.path, **opts)
-
-    def __str__ (self) :
-        return self.path
-    
-class RSyncRemoteServer (RSyncServer) :
-    """
-        Remote filesystem backup.
-    """
-
-    def __init__ (self, host, path) :
-        """
-            host        - remote SSH host
-            path        - remote path
+            Return local filesystem path for source.
         """
 
-        RSyncServer.__init__(self)
-    
-        # glue
-        self.path = host + ':' + path
+        yield self.path
 
-    def execute (self, options, srcdst, **opts) :
+    def rsync_sender (self, options):
         """
-                options     - list of rsync options
-                srcdst      - the (source, dest) pair with None placeholder, as returned by parse_command
+            Run with --server --sender options.
+        """
+        
+        with self.mount() as path:
+            return rsync(options, ['.', path], sudo=self.sudo)
+
+    def rsync (self, options, dest):
+        """
+            Run with the given destination.
         """
 
-        return self._execute(options, srcdst, self.path, **opts)
+        with self.mount() as path:
+            return rsync(options, [path, dest], sudo=self.sudo)
 
-    def __str__ (self) :
+    def __str__ (self):
         return self.path
  
-class RSyncLVMServer (RSyncServer) :
+class LVMSource(Source):
     """
         Backup LVM LV by snapshotting + mounting it.
     """
 
-    def __init__ (self, vg, lv, sudo=None, **opts) :
+    def __init__ (self, vg, lv, path, sudo=None, lvm_opts={}):
         """
-            **opts      - options for LVM.snapshot
-        """
+            vg              - str: LVM vg name
+            lv              - str: LVM vg name
+            path            - str: filesystem path within lvm volume; no leading /
 
-        RSyncServer.__init__(self)
+            sudo            - use sudo for LVM operations
+            lvm_opts   - options for LVM.snapshot
+        """
         
-        # lvm
-        self.lvm = LVM(vg, sudo=sudo)
-        self.volume = self.lvm.volume(lv)
-
+        self.path = path.lstrip('/')
         self.sudo = sudo
-        self.snapshot_opts = opts
- 
-    def execute (self, options, srcdst, sudo=False, **opts) :
-        """
-            Snapshot, mount, execute
 
-                options     - list of rsync options
-                srcdst      - the (source, dest) pair with None placeholder, as returned by parse_command
+        self.lvm = LVM(vg, sudo=sudo)
+        self.lvm_volume = self.lvm.volume(lv)
+        self.lvm_opts = lvm_opts
+ 
+    @contextlib.contextmanager
+    def mount (self):
+        """
+            Mount LVM snapshot of volume
         """
         
-        # backup target from LVM command
-        lvm = self.volume.lvm
-        volume = self.volume
-
         # snapshot
-        log.info("Open snapshot: %s", volume)
+        log.info("Open snapshot: %s", self.lvm_volume)
 
-        # XXX: generate snapshot nametag to be unique?
-        with lvm.snapshot(volume, tag='backup', **self.snapshot_opts) as snapshot:
+        with self.lvm.snapshot(self.lvm_volume,
+                tag     = 'backup',
+                **self.lvm_opts
+        ) as snapshot:
             # mount
             log.info("Mounting snapshot: %s", snapshot)
 
-            with mount(snapshot.dev_path, name_hint=('lvm_' + snapshot.name + '_'), readonly=True, sudo=sudo) as mountpoint:
-                # rsync!
-                log.info("Running rsync: %s", mountpoint)
-
-                # with trailing slash
-                return self._execute(options, srcdst, mountpoint.path + '/', sudo=sudo, **opts)
-
-            # cleanup
-        # cleanup
+            with pvl.backup.mount.mount(snapshot.dev_path,
+                    name_hint   = 'lvm_' + snapshot.name + '_',
+                    readonly    = True,
+                    sudo        = self.sudo,
+            ) as mountpoint:
+                yield mountpoint.path + '/' + self.path
  
-    def __str__ (self) :
-        return 'lvm:{volume}'.format(volume=self.volume)
+    def __str__ (self):
+        return 'lvm:{volume}'.format(volume=self.lvm_volume)
  
-def parse_command (command_parts, restrict_server=True, restrict_readonly=True) :
+def parse_command (command):
     """
-        Parse given rsync server command into bits. 
+        Parse rsync server command into bits. 
 
-            command_parts       - the command-list sent by rsync
-            restrict_server     - restrict to server-mode
-            restrict_readonly   - restrict to read/send-mode
-        
-        In server mode, source will always be '.', and dest the source/dest.
+            command:            - list(argv) including 'rsync' command and options/arguments
         
         Returns:
+            cmd:        rsync argv[0]
+            options:    list of --options and -opts
+            paths:      list of path arguments
 
-            (cmd, options, path, (source, dest))
-            
-            options         -> list of -options
-            path            -> real source path
-            (source, dest)  -> combination of None for path, and the real source/dest
+        Raises:
+            CommandError
+        
+        >>> import shlex
+        >>> parse_command(shlex.split('rsync --server --sender -ax . lvm:asdf:test'))
+        ('rsync', ['--server', '--sender', '-ax'], ['.', 'lvm:asdf:test'])
 
     """
 
     cmd = None
     options = []
-    source = None
-    dest = None
+    paths = []
 
     # parse
-    for part in command_parts :
-        if cmd is None :
+    for part in command:
+        if cmd is None:
             cmd = part
 
-        elif part.startswith('-') :
+        elif part.startswith('--'):
             options.append(part)
-
-        elif source is None :
-            source = part
-
-        elif dest is None :
-            dest = part
-
-    log.debug("%s: %s", cmd, options)
-
-    # options
-    have_server = ('--server' in options)
-    have_sender = ('--sender' in options)
-
-    # verify
-    if restrict_server and not have_server :
-        raise RSyncCommandFormatError("Missing --server")
-
-    if restrict_readonly and not have_sender :
-        raise RSyncCommandFormatError("Missing --sender for readonly")
-
-    if not source :
-        raise RSyncCommandFormatError("Missing source path")
         
-    if not dest:
-        raise RSyncCommandFormatError("Missing dest path")
+        elif part.startswith('-'):
+            # XXX: parse out individual flags..?
+            options.append(part)
+        
+        else:
+            paths.append(part)
 
+    return cmd, options, paths
+
+def parse_server_command(command):
+    """
+        Parse rsync's internal --server command used when remoting over SSH.
+
+        Returns:
+            options:    list of --options and -opts from parse_options
+            source:     source path if sender, or None
+            dest:       dest path if receiver, or None
+        
+        Raises:
+            CommandError
+        
+    """
+
+    cmd, options, args = parse_command(command)
+
+    if cmd.split('/')[-1] != 'rsync':
+        raise CommandError("Invalid command: {cmd}".format(cmd=cmd))
+
+    if len(args) != 2:
+        raise CommandError("Invalid source/destination paths")
+    
+    if args[0] != '.':
+        raise CommandError("Invalid source-path for server")
+
+    path = args[1]
 
     # parse real source
-    if have_sender :
-        # read; first arg will always be .
-        if source != '.' :
-            raise RSyncCommandFormatError("Invalid dest for sender")
+    if not '--server' in options:
+        raise CommandError("Missing --server")
 
-        path = dest
-        dest = None
-        
-        log.debug("using server/sender source path: %s", path)
-
-    elif have_server :
+    elif not '--sender' in options:
         # write
-        if source != '.' :
-            raise RSyncCommandFormatError("Invalid source for reciever")
-
-        path = dest
-        dest = None
-        
-        log.debug("using server dest path: %s", path)
-
-    else :
-        # local src -> dst
-        path = source
         source = None
-
-        log.debug("using local src path: %s -> %s", path, dest)
+        dest = path
+        
+    else:
+        # read
+        source = path
+        dest = None
 
     # ok
-    return cmd, options, path, (source, dest)
-      
-def parse_source (path, restrict_paths=None, allow_remote=True, lvm_opts={}) :
+    return options, source, dest
+    
+def parse_sender_command (command):
     """
-        Figure out source to rsync from, based on pseudo-path given in rsync command.
+        Parse rsync's internal --server --sender command used when reading over SSH.
+
+        Returns:
+            options:    list of --options and -opts from parse_options
+            source:     source path
+        
+        Raises:
+            CommandError
+        
+    """
+    
+    options, source, dest = parse_server_command(command)
+
+    if dest:
+        raise CommandError("Missing --sender")
+    else:
+        return options, source
+
+def parse_source (path, restrict_paths=None, allow_remote=True, sudo=None, lvm_opts={}):
+    """
+        Parse an LVM source path, supporting custom extensions for LVM support.
             
-            restrict_paths  - raise RsyncCommandFormatError if source path is not under any of the given sources.
-            allow_remote    - allow remote backups?
-            lvm_opts        - dict of **opts for RSyncLVMServer
+            restrict_paths  - raise CommandError if source path is not under any of the given sources.
+            allow_remote    - allow remote sources?
+            lvm_opts        - **opts for LVMSource
     """
 
     endslash = path.endswith('/')
@@ -282,61 +247,73 @@ def parse_source (path, restrict_paths=None, allow_remote=True, lvm_opts={}) :
     # normalize
     path = os.path.normpath(path)
 
-    if endslash and not path.endswith('/') :
+    if endslash and not path.endswith('/'):
         # add it back in
         # happens for 'foo:/' and such
         path += '/'
 
     # verify path
-    if restrict_paths :
-        for restrict_path in restrict_paths :
-            if path.startswith(restrict_path) :
+    if restrict_paths:
+        for restrict_path in restrict_paths:
+            if path.startswith(restrict_path):
                 # ok
                 break
-        else :
+        else:
             # fail
-            raise RSyncCommandFormatError("Restricted path".format())
+            raise CommandError("Restricted path".format())
 
-    if path.startswith('/') :
+    if path.startswith('/'):
         # direct filesystem path
         log.debug("filesystem: %s", path)
 
-        return RSyncFSServer(path)
+        return Source(path,
+                sudo    = sudo,
+        )
 
-    elif path.startswith('lvm:') :
-        _, lvm = path.split(':', 1)
+    elif path.startswith('lvm:'):
+        _, path = path.split(':', 1)
 
-        # LVM LV
-        try :
-            if ':' in lvm :
-                vg, lv = lvm.split(':', 1)
+        # LVM VG
+        try:
+            if ':' in path:
+                vg, path = path.split(':', 1)
 
-                log.warn("old lvm: syntax: lvm:%s; use: lvm:%s/%s", path, vg, lv)
+                log.warn("old 'lvm:%s:%s' syntax; use 'lvm:%s/%s'", vg, path)
 
-            elif '/' in lvm:
-                vg, lv = lvm.split('/', 1)
+            elif '/' in path:
+                vg, path = path.split('/', 1)
 
-            else :
-                raise RSyncCommandFormatError("Invalid lvm pseudo-path: {lvm}: unrecognized vg/lv separator".format(lvm=lvm))
+            else:
+                raise CommandError("Invalid lvm pseudo-path {path}: unrecognized vg/lv separator".format(path=path))
 
         except ValueError, e:
-            raise RSyncCommandFormatError("Invalid lvm pseudo-path: {lvm}: {error}".format(lvm=lvm, error=e))
-        
-        # XXX: validate?
-        log.debug("LVM: %s/%s", vg, lv)
+            raise CommandError("Invalid lvm pseudo-path: {path}: {error}".format(path=path, error=e))
+
+        # LVM LV, and path within LV
+        if '/' in path:
+            lv, path = path.split('/', 1)
+        else:
+            lv = path
+            path = ''
+       
+        # lookup
+        log.debug("LVM: %s/%s/%s", vg, lv, path)
 
         # open
-        return RSyncLVMServer(vg, lv, **lvm_opts)
+        return LVMSource(vg, lv, path,
+                sudo            = sudo,
+                lvm_opts        = lvm_opts,
+        )
 
-    elif ':' in path and allow_remote :
-        host, path = path.split(':', 1)
-
+    elif ':' in path and allow_remote:
         # remote host
         log.debug("remote: %s:%s", host, path)
 
-        return RSyncRemoteServer(host, path)
+        return Source(path,
+                sudo        = sudo,
+        )
        
-    else :
+    else:
         # invalid
-        raise RSyncCommandFormatError("Unrecognized backup path: {path}".format(path=path))
+        raise CommandError("Unrecognized backup path: {path}".format(path=path))
 
