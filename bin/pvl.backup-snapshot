@@ -450,7 +450,7 @@ class Target (object) :
             # run the rsync.RSyncServer; None as a placeholder will get replaced with the actual source
             self.source.execute(invoke.optargs(**opts), srcdst=(None, temp_path))
 
-        except rsync.RsyncError as ex :
+        except rsync.Error as ex :
             # XXX:  leaves temp_path in place, which must be removed or cleaned up..
             #       maybe use {snapshot_name}.tmp instead?
             log.warn("%s: rsync failed:", self, exc_info=ex)
