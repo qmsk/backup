@@ -48,14 +48,12 @@ class Filesystem (object):
     def __str__(self):
         return self.name
 
-    @property
-    def exists(self):
-        try:
-            zfs('list', '-tfilesystem', self.name)
-        except ZFSError as error:
-            return False
-        else:
-            return True
+    def check(self):
+        """
+            Raises ZFSError if unable to list the zfs filesystem.
+        """
+
+        zfs('list', '-tfilesystem', self.name)
 
     def get(self, property_name):
         for fs, property_name, value, source in zfs('get', '-H', property_name, self.name):
@@ -112,3 +110,6 @@ class Snapshot (object):
 
     def _create(self):
         zfs('snapshot', self)
+
+    def destroy (self):
+        zfs('destroy', self)
