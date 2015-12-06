@@ -1,7 +1,16 @@
 #!/usr/bin/python
 
 """
-    Manage ZFS snapshots from rsync sources
+    Manage ZFS snapshots from rsync sources.
+
+    sudo ./opt/bin/pvl.backup-zfs -v tank/backup/test \
+            --source=/home/terom/dev/pvl-backup/mnt/ \
+            --snapshot '5@%Y%m%d-%H%M%S' \
+            --snapshot '5@%Y%m%d' \
+            --snapshot '5@%Y%m' \
+            --snapshot '5@%Y' \
+            --purge 
+
 """
 
 import datetime
@@ -38,8 +47,26 @@ class Interval (object):
         self.strftime = strftime
         self.limit = limit
 
+    def __str__(self):
+        if self.limit:
+            return "{self.limit}@{self.strftime}".format(self=self)
+        else:
+            return "{self.strftime}".format(self=self)
+
     def format(self, now):
         return now.strftime(self.strftime)
+
+    def match(self, name):
+        """
+            Returns True if the given snapshot name matches our format.
+        """
+
+        try:
+            datetime.datetime.strptime(name, self.strftime)
+        except ValueError:
+            return False
+        else:
+            return True
 
 class Target (object):
     # rsync options, in invoke.optargs format
@@ -91,8 +118,10 @@ class ZFSTarget (Target):
         )
 
     def __init__ (self, zfs, rsync_source, intervals=[]):
-        if not zfs.exists:
-            raise Error("No such ZFS: {zfs}".format(zfs=zfs))
+        try:
+            zfs.check()
+        except pvl.backup.zfs.Error as error:
+            raise Error("Check {zfs}: {error}".format(zfs=zfs, error=error))
 
         self.zfs = zfs
         self.rsync_source = rsync_source
@@ -126,12 +155,28 @@ class ZFSTarget (Target):
         if snapshot_name in self.zfs_snapshots:
             # already exists
             return None
+        
+        # not updating self.zfs_snapshots!
+        return self.zfs.snapshot(snapshot_name)
 
-        snapshot = self.zfs_snapshots[snapshot_name] = self.zfs.snapshot(snapshot_name)
+    def purge_interval(self, options, interval):
+        """
+            Purge snapshots for interval
+        """
 
-        return snapshot
+        snapshots = [snapshot for snapshot_name, snapshot in self.zfs_snapshots.iteritems() if interval.match(snapshot_name)]
+        snapshots.sort(reverse=True) # from highest down
 
-    def backup (self):
+        log.debug("%s purge interval=%s: snapshots=%s", self, interval, snapshots)
+
+        for purge_snapshot in snapshots[interval.limit:]:
+            if options.noop:
+                log.warn("%s: --noop purge %s", self, purge_snapshot)
+            else:
+                log.info("%s: purge %s", self, purge_snapshot)
+                purge_snapshot.destroy()
+
+    def backup (self, options):
         """
             Run backup, managing snapshots.
         """
@@ -148,19 +193,27 @@ class ZFSTarget (Target):
         for interval in self.intervals:
             interval_snapshot = interval.format(now)
 
-            snapshot = self.snapshot_interval(interval_snapshot)
-        
-            if snapshot:
-                log.info("%s@%s: snapshot %s", self, interval_snapshot, snapshot)
+            log.debug("%s: interval %s: snapshot=%s limit=%s", self, interval, interval_snapshot, interval.limit)
+
+            if self.snapshot_interval(interval_snapshot):
+                log.info("%s: snapshot %s", self, interval_snapshot)
+
+            if options.purge and interval.limit:
+                self.purge_interval(options, interval)
 
 def main (argv):
     parser = optparse.OptionParser()
     parser.add_option_group(pvl.args.parser(parser))
 
-    parser.add_option('--source',
-            help="Backup source")
+    parser.add_option('-n', '--noop', action='store_true',
+            help="No-op")
+
+    parser.add_option('--source', metavar='RSYNC-SOURCE',
+            help="Backup rsync source")
     parser.add_option('--snapshot', metavar='[LIMIT@]STRFTIME', action='append', dest='interval', default=[],
             help="Backup retention intervals")
+    parser.add_option('--purge', action='store_true',
+            help="Purge old snapshots")
 
     options, args = pvl.args.parse(parser, argv, package='backup', module='zfs')
 
@@ -177,7 +230,7 @@ def main (argv):
             return 1
 
         try:
-            target.backup()
+            target.backup(options)
         except Error as error:
             log.exception("%s: %s", target, error)
             return 2
