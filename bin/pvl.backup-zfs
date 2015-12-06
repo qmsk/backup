@@ -104,20 +104,24 @@ class ZFSTarget (Target):
         
     @classmethod
     def config (cls, name,
-            source,
+            rsync_source=None,
             **opts
     ):
-        try:
-            rsync_source    = pvl.backup.rsync.parse_source(source)
-        except pvl.backup.rsync.SourceError as error:
-            raise Error("--source=%s: %s", source, error)
+        if rsync_source:
+            try:
+                rsync_source    = pvl.backup.rsync.parse_source(source)
+            except pvl.backup.rsync.SourceError as error:
+                raise Error("--source=%s: %s", source, error)
 
         return cls(pvl.backup.zfs.Filesystem(name),
                 rsync_source    = rsync_source,
                 **opts
         )
 
-    def __init__ (self, zfs, rsync_source, intervals=[]):
+    def __init__ (self, zfs,
+            rsync_source    = None,
+            intervals       = [],
+    ):
         try:
             zfs.check()
         except pvl.backup.zfs.Error as error:
@@ -185,9 +189,10 @@ class ZFSTarget (Target):
 
         log.info("%s: backup %s", self, now)
 
-        rsync_path = self.rsync()
-        
-        log.info("%s: rsync %s", self, rsync_path)
+        if self.rsync_source:
+            rsync_path = self.rsync()
+            
+            log.info("%s: rsync %s", self, rsync_path)
 
         # intervals
         for interval in self.intervals:
@@ -208,7 +213,7 @@ def main (argv):
     parser.add_option('-n', '--noop', action='store_true',
             help="No-op")
 
-    parser.add_option('--source', metavar='RSYNC-SOURCE',
+    parser.add_option('--rsync-source', metavar='RSYNC-SOURCE',
             help="Backup rsync source")
     parser.add_option('--snapshot', metavar='[LIMIT@]STRFTIME', action='append', dest='interval', default=[],
             help="Backup retention intervals")
@@ -222,8 +227,8 @@ def main (argv):
     for target in args:
         try:
             target = ZFSTarget.config(target,
-                    source      = options.source,
-                    intervals   = intervals,
+                    rsync_source    = options.rsync_source,
+                    intervals       = intervals,
             )
         except Error as error:
             log.error("%s: %s", target, error)
