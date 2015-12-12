@@ -56,8 +56,20 @@ class Filesystem (object):
         zfs('list', '-tfilesystem', self.name)
 
     def get(self, property_name):
+        """
+            Get property value.
+
+            Returns None if the property does not exist or is not set.
+        """
+
         for fs, property_name, value, source in zfs('get', '-H', property_name, self.name):
-            return value
+            if value == '-' and source == '-':
+                return None
+            else:
+                return value
+
+    def set(self, property, value):
+        zfs('set', '{property}={value}'.format(property=property, value=value), self.name)        
 
     @property
     def mountpoint(self):
@@ -68,10 +80,13 @@ class Filesystem (object):
         else:
             return mountpoint
 
-    def create(self):
-        zfs('create', self.name)
+    def create(self, properties={}):
+        options = ['-o{property}={value}'.format(property=key, value=value) for key, value in properties.iteritems() if value is not None]
+        args = options + [self.name]
 
-    def snapshot(self, name):
+        zfs('create', *args)
+
+    def snapshot(self, name, create=True):
         """
             Create and return a new Snapshot()
 
@@ -79,7 +94,9 @@ class Filesystem (object):
         """
 
         snapshot = Snapshot(self, name)
-        snapshot._create()
+
+        if create:
+            snapshot._create()
 
         return snapshot
 
