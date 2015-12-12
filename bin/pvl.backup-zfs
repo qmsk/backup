@@ -70,32 +70,90 @@ class Interval (object):
 
 class Target (object):
     # rsync options, in invoke.optargs format
-    rsync_options = {
+    RSYNC_OPTIONS = {
         'archive':          True,
         'hard-links':       True,
         'one-file-system':  True,
         'numeric-ids':      True,
         'delete':           True,
     }
+    
+    @classmethod
+    def config(cls,
+            rsync_source=None,
+            rsync_options=None,
+            **opts
+    ):
+        """
+            Parse rsync options from list.
+        """
 
-    def rsync (self, dest):
+        if rsync_source:
+            try:
+                rsync_source    = pvl.backup.rsync.parse_source(rsync_source)
+            except pvl.backup.rsync.SourceError as error:
+                raise Error("--source=%s: %s", source, error)
+       
+        _rsync_options = dict(cls.RSYNC_OPTIONS)
+
+        if rsync_options:
+            for opt in rsync_options:
+                if '=' in opt:
+                    opt, value = opt.split('=', 1)
+                else:
+                    value = True
+                
+                # update
+                if value is True:
+                    _rsync_options[opt] = value
+                elif value:
+                    _rsync_options.setdefault(opt, []).append(value)
+                else:
+                    del _rsync_options[opt]
+
+        return cls(
+                rsync_source    = rsync_source,
+                rsync_options   = _rsync_options,
+                **opts
+        )
+
+    def __init__(self,
+            rsync_source    = None,
+            rsync_options   = [],
+            intervals       = [],
+    ):
+        self.rsync_source = rsync_source
+        self.rsync_options = rsync_options
+        self.intervals = intervals
+
+    def mount(self):
+        """
+            Return backup destination path.
+        """
+
+        abstract
+
+    def rsync (self):
         """
             rsync source to given dest.
 
             Raises pvl.backup.rsync.Error
         """
         
+        # activate destination
+        dest_path = self.mount()
+        
         rsync_options = pvl.backup.invoke.optargs(**self.rsync_options)
 
         try:
             # run the rsync.RSyncServer; None as a placeholder will get replaced with the actual source
-            self.rsync_source.rsync(rsync_options, dest)
+            self.rsync_source.rsync(rsync_options, dest_path)
 
         except pvl.backup.rsync.Error as error:
             log.warn("%s rsync error: %s", self, error)
             raise
 
-        return dest
+        return dest_path
 
 class ZFSTarget (Target):
     """
@@ -104,27 +162,17 @@ class ZFSTarget (Target):
         
     @classmethod
     def config (cls, name,
-            rsync_source=None,
             **opts
     ):
-        if rsync_source:
-            try:
-                rsync_source    = pvl.backup.rsync.parse_source(rsync_source)
-            except pvl.backup.rsync.SourceError as error:
-                raise Error("--source=%s: %s", source, error)
-
-        return cls(pvl.backup.zfs.Filesystem(name),
-                rsync_source    = rsync_source,
+        return super(ZFSTarget, cls).config(
+                zfs             = pvl.backup.zfs.Filesystem(name),
                 **opts
         )
 
-    def __init__ (self, zfs,
-            rsync_source    = None,
-            intervals       = [],
-    ):
+    def __init__ (self, zfs, **opts):
+        super(ZFSTarget, self).__init__(**opts)
+
         self.zfs = zfs
-        self.rsync_source = rsync_source
-        self.intervals = intervals
 
     def __str__ (self):
         return str(self.zfs)
@@ -169,21 +217,18 @@ class ZFSTarget (Target):
             # ok
             pass
 
-    def rsync (self):
+    def mount(self):
         """
-            Update backup.
+            Return backup destination path.
+        """
 
-            Raises Error.
-        """
-        
         mountpoint = self.zfs.mountpoint
 
         if not mountpoint:
             raise Error("ZFS destination is not mounted: %s", self.zfs)
-        
-        # update the zfs contents using rsync
-        return super(ZFSTarget, self).rsync(dest=mountpoint)
 
+        return mountpoint
+        
     def purge_interval(self, options, interval, zfs_snapshots):
         """
             Purge snapshots for interval
@@ -254,6 +299,8 @@ def main (argv):
 
     parser.add_option('--rsync-source', metavar='RSYNC-SOURCE',
             help="Backup rsync source")
+    parser.add_option('--rsync-option', metavar='-option', action='append', dest='rsync_options', default=[],
+            help="Pass rsync options")
     parser.add_option('--snapshot', metavar='[LIMIT@]STRFTIME', action='append', dest='interval', default=[],
             help="Backup retention intervals")
     parser.add_option('--purge', action='store_true',
@@ -267,6 +314,7 @@ def main (argv):
         try:
             target = ZFSTarget.config(target,
                     rsync_source    = options.rsync_source,
+                    rsync_options   = options.rsync_options,
                     intervals       = intervals,
             )
         except Error as error:
