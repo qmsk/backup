@@ -109,7 +109,7 @@ class ZFSTarget (Target):
     ):
         if rsync_source:
             try:
-                rsync_source    = pvl.backup.rsync.parse_source(source)
+                rsync_source    = pvl.backup.rsync.parse_source(rsync_source)
             except pvl.backup.rsync.SourceError as error:
                 raise Error("--source=%s: %s", source, error)
 
@@ -122,19 +122,52 @@ class ZFSTarget (Target):
             rsync_source    = None,
             intervals       = [],
     ):
-        try:
-            zfs.check()
-        except pvl.backup.zfs.Error as error:
-            raise Error("Check {zfs}: {error}".format(zfs=zfs, error=error))
-
         self.zfs = zfs
         self.rsync_source = rsync_source
         self.intervals = intervals
 
-        self.zfs_snapshots = {snapshot.name: snapshot for snapshot in zfs.list_snapshots()}
-
     def __str__ (self):
         return str(self.zfs)
+
+    def setup (self, create=False, verify_source=None, force_source=False):
+        """
+            Verify that the ZFS volume exists.
+        """
+                
+        get_error = None
+        zfs_source = {}
+
+        try:
+            zfs_source = self.zfs.get('pvl-backup:source')
+        except pvl.backup.zfs.Error as error:
+            get_error = error
+
+        log.debug("%s setup: get_error=%s, zfs_source=%s", self, get_error, zfs_source)
+        
+        if get_error:
+            if create:
+                props = {'pvl-backup:source': verify_source}
+
+                # assume error is caused by missing fs
+                log.warning("%s: create volume with %s", self, props)
+
+                self.zfs.create(props)
+
+            else:
+                raise get_error
+
+        elif verify_source and zfs_source != verify_source:
+            if force_source:
+                log.warning("%s: update pvl-backup:source: %s from %s", self, force_source, zfs_source)
+
+                self.zfs.set('pvl-backup:source', force_source)
+
+            else:
+                raise Error("ZFS %s property pvl-backup.source=%s mismatch, should be %s" % (self, zfs_source, verify_source))
+
+        else:
+            # ok
+            pass
 
     def rsync (self):
         """
@@ -151,24 +184,12 @@ class ZFSTarget (Target):
         # update the zfs contents using rsync
         return super(ZFSTarget, self).rsync(dest=mountpoint)
 
-    def snapshot_interval(self, snapshot_name):
-        """
-            Snapshot for interval
-        """
-        
-        if snapshot_name in self.zfs_snapshots:
-            # already exists
-            return None
-        
-        # not updating self.zfs_snapshots!
-        return self.zfs.snapshot(snapshot_name)
-
-    def purge_interval(self, options, interval):
+    def purge_interval(self, options, interval, zfs_snapshots):
         """
             Purge snapshots for interval
         """
 
-        snapshots = [snapshot for snapshot_name, snapshot in self.zfs_snapshots.iteritems() if interval.match(snapshot_name)]
+        snapshots = [snapshot for snapshot_name, snapshot in zfs_snapshots.iteritems() if interval.match(snapshot_name)]
         snapshots.sort(reverse=True) # from highest down
 
         log.debug("%s purge interval=%s: snapshots=%s", self, interval, snapshots)
@@ -185,6 +206,16 @@ class ZFSTarget (Target):
             Run backup, managing snapshots.
         """
 
+        self.setup(
+                create          = options.setup_create,
+                verify_source   = str(self.rsync_source),
+                force_source    = str(self.rsync_source) if options.force_source else None,
+        )
+        
+        # track existing snapshots for create and purge
+        zfs_snapshots = {snapshot.name: snapshot for snapshot in self.zfs.list_snapshots()}
+        
+        # start
         now = datetime.datetime.now()
 
         log.info("%s: backup %s", self, now)
@@ -194,17 +225,20 @@ class ZFSTarget (Target):
             
             log.info("%s: rsync %s", self, rsync_path)
 
-        # intervals
+        # create new snapshots
         for interval in self.intervals:
-            interval_snapshot = interval.format(now)
+            snapshot_name = interval.format(now)
+            
+            if snapshot_name not in zfs_snapshots:
+                log.info("%s: snapshot %s: %s", self, interval, snapshot_name)
 
-            log.debug("%s: interval %s: snapshot=%s limit=%s", self, interval, interval_snapshot, interval.limit)
+                zfs_snapshots[snapshot_name] = self.zfs.snapshot(snapshot_name)
 
-            if self.snapshot_interval(interval_snapshot):
-                log.info("%s: snapshot %s", self, interval_snapshot)
-
-            if options.purge and interval.limit:
-                self.purge_interval(options, interval)
+        # purge intervals
+        if options.purge:
+            for interval in self.intervals:
+                if interval.limit:
+                    self.purge_interval(options, interval, zfs_snapshots)
 
 def main (argv):
     parser = optparse.OptionParser()
@@ -212,6 +246,11 @@ def main (argv):
 
     parser.add_option('-n', '--noop', action='store_true',
             help="No-op")
+
+    parser.add_option('--setup-create', action='store_true',
+            help="Create new ZFS backup filesystem")
+    parser.add_option('--force-source', action='store_true',
+            help="Update ZFS rsync source")
 
     parser.add_option('--rsync-source', metavar='RSYNC-SOURCE',
             help="Backup rsync source")
