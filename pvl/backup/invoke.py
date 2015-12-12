@@ -70,6 +70,8 @@ def process_opt (opt, value) :
         ('--foo', 'bar')
         >>> process_opt('foo_bar', 'asdf')
         ('--foo-bar', 'asdf')
+        >>> process_opt('asdf', ['foo', 'bar'])
+        ('--asdf', 'foo', '--asdf', 'bar')
 
         # empty
         >>> process_opt('foo', False)
@@ -92,6 +94,10 @@ def process_opt (opt, value) :
     elif not value :
         # flag opt / omit
         return ( )
+
+    elif isinstance(value, (list, tuple)):
+        # multiple flag
+        return tuple(arg for subvalue in value for arg in (opt, str(subvalue)))
 
     else :
         # as-is
