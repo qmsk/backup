@@ -323,7 +323,7 @@ def parse_source (path, restrict_paths=None, allow_remote=True, sudo=None, lvm_o
             raise SourceError("Invalid remote path")
 
         # remote host
-        log.debug("remote: %s:%s", host, path)
+        log.debug("remote: %s", path)
 
         return Source(path,
                 sudo        = sudo,
