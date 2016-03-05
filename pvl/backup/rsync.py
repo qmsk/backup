@@ -8,8 +8,8 @@ import contextlib
 import logging
 import os.path
 import pvl.backup.mount
+import pvl.invoke
 
-from pvl import invoke
 from pvl.backup.lvm import LVM, LVMVolume, LVMSnapshot
 
 log = logging.getLogger('pvl.backup.rsync')
@@ -20,25 +20,16 @@ def rsync (options, paths, sudo=False):
     """
         Run rsync.
 
-        Raises InvokeError
+        Raises pvl.invoke.InvokeError
     """
 
     log.info("rsync %s %s", ' '.join(options), ' '.join(paths))
 
-    try:
-        # invoke directly; no option-handling, nor stdin/out redirection
-        invoke.invoke(RSYNC, options + paths, stdin=True, stdout=True, sudo=sudo)
-    except invoke.InvokeError as error:
-        raise InvokeError(error.exit, error.stderr)
+    # invoke directly; no option-handling, nor stdin/out redirection
+    pvl.invoke.invoke(RSYNC, options + paths, stdin=True, stdout=True, sudo=sudo)
 
 class Error (Exception):
     pass
-
-class InvokeError (Error):
-    def __init__(self, exit, stderr):
-        self.exit = exit
-
-        super(InvokeError, self).__init__(stderr)
 
 class CommandError (Error):
     """
