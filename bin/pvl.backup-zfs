@@ -1,10 +1,10 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 """
     Manage ZFS snapshots from rsync sources.
 
     sudo ./opt/bin/pvl.backup-zfs -v tank/backup/test \
-            --source=/home/terom/dev/pvl-backup/mnt/ \
+            --rsync-source=lvm:test/test \
             --snapshot '5@%Y%m%d-%H%M%S' \
             --snapshot '5@%Y%m%d' \
             --snapshot '5@%Y%m' \
@@ -234,8 +234,8 @@ class ZFSTarget (Target):
             Purge snapshots for interval
         """
 
-        snapshots = [snapshot for snapshot_name, snapshot in zfs_snapshots.iteritems() if interval.match(snapshot_name)]
-        snapshots.sort(reverse=True) # from highest down
+        snapshots = [snapshot for snapshot_name, snapshot in zfs_snapshots.items() if interval.match(snapshot_name)]
+        snapshots.sort(key=lambda s: s.name, reverse=True) # from highest down
 
         log.debug("%s purge interval=%s: snapshots=%s", self, interval, snapshots)
 
