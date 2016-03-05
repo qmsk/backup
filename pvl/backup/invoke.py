@@ -20,7 +20,7 @@ class InvokeError (Exception):
     def __str__ (self) :
         return "{self.cmd} exit {self.exit}: {self.stderr}".format(self=self)
 
-def invoke (cmd, args, data=None, sudo=False) :
+def invoke (cmd, args, data=None, sudo=False, encoding='utf-8') :
     """
         Invoke a command directly.
         
@@ -39,6 +39,9 @@ def invoke (cmd, args, data=None, sudo=False) :
         io = None
     else :
         io = subprocess.PIPE
+    
+    if data and encoding:
+        data = data.encode(encoding)
 
     args = [cmd] + args
 
@@ -54,9 +57,12 @@ def invoke (cmd, args, data=None, sudo=False) :
 
     if p.returncode :
         # failed
-        raise InvokeError(cmd, p.returncode, stderr)
+        raise InvokeError(cmd, p.returncode, stderr.decode(encoding, errors='replace'))
 
-    return stdout
+    if stdout is None:
+        return None
+
+    return stdout.decode(encoding)
 
 def process_opt (opt, value) :
     """
@@ -110,7 +116,7 @@ def optargs (*args, **kwargs) :
 
     ## opts
     # process
-    opts = [process_opt(opt, value) for opt, value in kwargs.iteritems()]
+    opts = [process_opt(opt, value) for opt, value in kwargs.items()]
 
     # flatten
     opts = [str(opt_part) for opt_parts in opts for opt_part in opt_parts if opt_part]

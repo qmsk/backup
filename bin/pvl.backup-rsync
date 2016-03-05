@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 """
     rsync --server --sender wrapper for use with SSH authorized_keys command="...", with additional support for LVM snapshots.
