@@ -133,7 +133,7 @@ def main (argv):
     # parse
     options, args = pvl.args.parse(parser, argv, package='backup', module='rsync')
     
-    # from args (as given by `rsync -e pvlbackup-rsync-wrapper`) -> 'pvlbackup-rsync-wrapper <host> (<command> ...)'
+    # from args (as given by `rsync -e pvl.backup-rsync`) -> 'pvl.backup-rsync <host> (<command> ...)'
     if options.ssh_command:
         # from ssh authorized_keys command="..."
         command_parts = shlex.split(options.ssh_command)
