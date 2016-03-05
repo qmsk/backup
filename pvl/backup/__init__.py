@@ -3,5 +3,7 @@
 
     Supports LVM w/ snapshots.
 """
-    
-__version__ = '0.7-dev'
+
+import pkg_resources
+
+__version__ = pkg_resources.get_distribution('pvl-backup').version

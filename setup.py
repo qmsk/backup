@@ -2,14 +2,12 @@
 
 from distutils.core import setup
 
-# XXX: for determining version
-from pvl.backup import __version__
-
 setup(
     name            = 'pvl-backup',
-    version         = __version__,
+    version         = '1.0-dev',
     description     = "Päivölä rsync backup utilities",
     url             = 'http://verkko.paivola.fi/hg/pvl-backup/',
+    license         = 'MIT',
 
     author          = 'Tero Marttila',
     author_email    = 'terom@paivola.fi',
