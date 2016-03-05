@@ -119,14 +119,14 @@ class LVMSource(Source):
         """
         
         # snapshot
-        log.info("Open snapshot: %s", self.lvm_volume)
+        log.info("Creating LVM snapshot: %s", self.lvm_volume)
 
         with self.lvm.snapshot(self.lvm_volume,
                 tag     = 'backup',
                 **self.lvm_opts
         ) as snapshot:
             # mount
-            log.info("Mounting snapshot: %s", snapshot)
+            log.info("Mounting LVM snapshot: %s", snapshot)
 
             with pvl.backup.mount.mount(snapshot.dev_path,
                     name_hint   = 'lvm_' + snapshot.name + '_',

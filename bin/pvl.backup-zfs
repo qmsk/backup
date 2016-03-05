@@ -133,15 +133,12 @@ class Target (object):
 
         abstract
 
-    def rsync (self):
+    def rsync (self, dest_path):
         """
             rsync source to given dest.
 
             Raises pvl.backup.rsync.Error
         """
-        
-        # activate destination
-        dest_path = self.mount()
         
         rsync_options = pvl.invoke.optargs(**self.rsync_options)
 
@@ -152,8 +149,6 @@ class Target (object):
         except pvl.backup.rsync.Error as error:
             log.warn("%s rsync error: %s", self, error)
             raise
-
-        return dest_path
 
 class ZFSTarget (Target):
     """
@@ -266,9 +261,12 @@ class ZFSTarget (Target):
         log.info("%s: backup %s", self, now)
 
         if self.rsync_source:
-            rsync_path = self.rsync()
+            # activate destination
+            dest_path = self.mount()
             
-            log.info("%s: rsync %s", self, rsync_path)
+            log.info("%s: rsync %s", self, dest_path)
+        
+            rsync_path = self.rsync(dest_path)
 
         # create new snapshots
         for interval in self.intervals:
