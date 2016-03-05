@@ -157,10 +157,11 @@ class ZFSTarget (Target):
         
     @classmethod
     def config (cls, name,
+            noop        = None,
             **opts
     ):
         return super(ZFSTarget, cls).config(
-                zfs             = pvl.backup.zfs.Filesystem(name),
+                zfs             = pvl.backup.zfs.Filesystem(name, noop=noop),
                 **opts
         )
 
@@ -224,37 +225,26 @@ class ZFSTarget (Target):
 
         return mountpoint
         
-    def purge_interval(self, options, interval, zfs_snapshots):
+    def purge_interval(self, interval):
         """
             Purge snapshots for interval
         """
 
-        snapshots = [snapshot for snapshot_name, snapshot in zfs_snapshots.items() if interval.match(snapshot_name)]
+        snapshots = [snapshot for snapshot_name, snapshot in self.zfs.snapshots.items() if interval.match(snapshot_name)]
         snapshots.sort(key=lambda s: s.name, reverse=True) # from highest down
 
         log.debug("%s purge interval=%s: snapshots=%s", self, interval, snapshots)
 
         for purge_snapshot in snapshots[interval.limit:]:
-            if options.noop:
-                log.warn("%s: --noop purge %s", self, purge_snapshot)
-            else:
-                log.info("%s: purge %s", self, purge_snapshot)
-                purge_snapshot.destroy()
+            log.info("%s: purge %s", self, purge_snapshot)
 
-    def backup (self, options):
+            purge_snapshot.destroy()
+
+    def backup (self):
         """
             Run backup, managing snapshots.
         """
 
-        self.setup(
-                create          = options.setup_create,
-                verify_source   = str(self.rsync_source),
-                force_source    = str(self.rsync_source) if options.force_source else None,
-        )
-        
-        # track existing snapshots for create and purge
-        zfs_snapshots = {snapshot.name: snapshot for snapshot in self.zfs.list_snapshots()}
-        
         # start
         now = datetime.datetime.now()
 
@@ -272,16 +262,19 @@ class ZFSTarget (Target):
         for interval in self.intervals:
             snapshot_name = interval.format(now)
             
-            if snapshot_name not in zfs_snapshots:
+            if snapshot_name not in self.zfs.snapshots:
                 log.info("%s: snapshot %s: %s", self, interval, snapshot_name)
 
-                zfs_snapshots[snapshot_name] = self.zfs.snapshot(snapshot_name)
+                self.zfs.snapshot(snapshot_name)
 
-        # purge intervals
-        if options.purge:
-            for interval in self.intervals:
-                if interval.limit:
-                    self.purge_interval(options, interval, zfs_snapshots)
+    def purge(self):
+        """
+            Purge any extra snapshots
+        """
+
+        for interval in self.intervals:
+            if interval.limit:
+                self.purge_interval(interval)
 
 def main (argv):
     parser = optparse.OptionParser()
@@ -314,13 +307,25 @@ def main (argv):
                     rsync_source    = options.rsync_source,
                     rsync_options   = options.rsync_options,
                     intervals       = intervals,
+                    noop            = options.noop
             )
         except Error as error:
             log.error("%s: %s", target, error)
             return 1
 
         try:
-            target.backup(options)
+            target.setup(
+                    create          = options.setup_create,
+                    verify_source   = str(target.rsync_source),
+                    force_source    = str(target.rsync_source) if options.force_source else None,
+            )
+ 
+            target.backup()
+
+            # purge intervals
+            if options.purge:
+                target.purge()
+
         except Error as error:
             log.exception("%s: %s", target, error)
             return 2
