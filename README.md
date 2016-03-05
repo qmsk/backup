@@ -35,10 +35,10 @@ When rsyncing from a remote LVM snapshot, the source syntax is:
 
 TODO: freeze/sync the filesystem for the snapshot?
 
-### rsync snapshots
+### rsync snapshot storage
 
 The `pvl.backup-snapshot` script can be used to manage a series of rsync snapshots on filesystems like ext4. This uses `rsync --link-dest` internally to hardlink files between snapshots, and only store changed files on disk.
 
-### zfs snapshots
+### zfs snapshot storage
 
 The `pvl.backup-zfs` script can be used manage ZFS snapshots with retention intervals when using rsync to backup remote filesystems onto local ZFS filesystems.

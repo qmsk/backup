@@ -15,7 +15,6 @@
 
 import datetime
 import logging
-import optparse
 import pvl.args
 import pvl.backup.rsync
 import pvl.backup.zfs
@@ -276,38 +275,44 @@ class ZFSTarget (Target):
             if interval.limit:
                 self.purge_interval(interval)
 
-def main (argv):
-    parser = optparse.OptionParser()
-    parser.add_option_group(pvl.args.parser(parser))
+def main (args):
+    parser = pvl.args.parser(package='backup', module='zfs',
+            description = __doc__,
+            version     = __version__,
+    )
 
-    parser.add_option('-n', '--noop', action='store_true',
+    parser.add_argument('-n', '--noop', action='store_true',
             help="No-op")
 
-    parser.add_option('--setup-create', action='store_true',
+    parser.add_argument('--setup-create', action='store_true',
             help="Create new ZFS backup filesystem")
-    parser.add_option('--force-source', action='store_true',
-            help="Update ZFS rsync source")
 
-    parser.add_option('--rsync-source', metavar='RSYNC-SOURCE',
+    parser.add_argument('--force-source', action='store_true',
+            help="Update ZFS rsync source")
+    parser.add_argument('--rsync-source', metavar='RSYNC-SOURCE',
             help="Backup rsync source")
-    parser.add_option('--rsync-option', metavar='-option', action='append', dest='rsync_options', default=[],
+    parser.add_argument('--rsync-option', metavar='-option', action='append', dest='rsync_options', default=[],
             help="Pass rsync options")
-    parser.add_option('--snapshot', metavar='[LIMIT@]STRFTIME', action='append', dest='interval', default=[],
+
+    parser.add_argument('--snapshot', metavar='LIMIT@STRFTIME', action='append', dest='interval', default=[],
             help="Backup retention intervals")
-    parser.add_option('--purge', action='store_true',
+    parser.add_argument('--purge', action='store_true',
             help="Purge old snapshots")
 
-    options, args = pvl.args.parse(parser, argv, package='backup', module='zfs')
+    parser.add_argument('target', metavar='ZFS', nargs='+',
+            help="ZFS target")
 
-    intervals = [Interval.config(interval) for interval in options.interval]
+    args = pvl.args.parse(parser, args)
 
-    for target in args:
+    intervals = [Interval.config(interval) for interval in args.interval]
+
+    for target in args.target:
         try:
             target = ZFSTarget.config(target,
-                    rsync_source    = options.rsync_source,
-                    rsync_options   = options.rsync_options,
+                    rsync_source    = args.rsync_source,
+                    rsync_options   = args.rsync_options,
                     intervals       = intervals,
-                    noop            = options.noop
+                    noop            = args.noop
             )
         except Error as error:
             log.error("%s: %s", target, error)
@@ -315,15 +320,15 @@ def main (argv):
 
         try:
             target.setup(
-                    create          = options.setup_create,
+                    create          = args.setup_create,
                     verify_source   = str(target.rsync_source),
-                    force_source    = str(target.rsync_source) if options.force_source else None,
+                    force_source    = str(target.rsync_source) if args.force_source else None,
             )
  
             target.backup()
 
             # purge intervals
-            if options.purge:
+            if args.purge:
                 target.purge()
 
         except Error as error:
