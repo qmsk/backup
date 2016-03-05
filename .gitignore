@@ -2,7 +2,9 @@
 .*.swp
 *.pyc
 
+MANIFEST
 *.egg-info/
 build/
 dist/
+
 opt/
