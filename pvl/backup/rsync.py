@@ -23,11 +23,11 @@ def rsync (options, paths, sudo=False):
         Raises InvokeError
     """
 
-    log.info("%s %s", ' '.join(options), ' '.join(paths))
+    log.info("rsync %s %s", ' '.join(options), ' '.join(paths))
 
     try:
         # invoke directly; no option-handling, nor stdin/out redirection
-        invoke.invoke(RSYNC, options + paths, data=False, sudo=sudo)
+        invoke.invoke(RSYNC, options + paths, stdin=True, stdout=True, sudo=sudo)
     except invoke.InvokeError as error:
         raise InvokeError(error.exit, error.stderr)
 

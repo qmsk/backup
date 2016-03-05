@@ -25,7 +25,7 @@ class CommandError (Error):
 
 def zfs(*args):
     try:
-        out = invoke.command(ZFS, *args)
+        stdout = invoke.command(ZFS, *args)
     except invoke.InvokeError as error:
         if error.exit == 1:
             raise ZFSError(error.stderr)
@@ -34,7 +34,7 @@ def zfs(*args):
         else:
             raise Error(error.stderr)
 
-    return [line.strip().split('\t') for line in out.splitlines()]
+    return [line.strip().split('\t') for line in stdout]
 
 class Filesystem (object):
     @classmethod
