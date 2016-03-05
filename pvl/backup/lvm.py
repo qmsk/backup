@@ -2,7 +2,7 @@
     Simple /sbin/lvm wrapper for handling snapshots.
 """
 
-from pvl.backup.invoke import invoke, optargs, InvokeError
+from pvl.invoke import invoke, optargs, InvokeError
 
 import contextlib
 import os.path

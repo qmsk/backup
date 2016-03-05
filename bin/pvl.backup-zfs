@@ -17,9 +17,9 @@ import datetime
 import logging
 import optparse
 import pvl.args
-import pvl.backup.invoke
 import pvl.backup.rsync
 import pvl.backup.zfs
+import pvl.invoke
 
 from pvl.backup import __version__
 
@@ -143,7 +143,7 @@ class Target (object):
         # activate destination
         dest_path = self.mount()
         
-        rsync_options = pvl.backup.invoke.optargs(**self.rsync_options)
+        rsync_options = pvl.invoke.optargs(**self.rsync_options)
 
         try:
             # run the rsync.RSyncServer; None as a placeholder will get replaced with the actual source

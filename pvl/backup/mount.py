@@ -2,7 +2,7 @@
     Mount filesystems.
 """
 
-from pvl.backup.invoke import invoke, optargs, command
+from pvl.invoke import invoke, optargs, command
 
 import contextlib
 import os, os.path

@@ -1,6 +1,6 @@
 import logging
 
-from pvl.backup import invoke
+from pvl import invoke
 
 log = logging.getLogger('pvl.backup.zfs')
 

@@ -14,8 +14,8 @@
 import pvl.args
 
 from pvl.backup import __version__
-from pvl.backup.invoke import InvokeError
 from pvl.backup import lvm
+from pvl.invoke import InvokeError
 
 import pvl.backup.rsync
 

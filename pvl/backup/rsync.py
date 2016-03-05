@@ -9,8 +9,8 @@ import logging
 import os.path
 import pvl.backup.mount
 
+from pvl import invoke
 from pvl.backup.lvm import LVM, LVMVolume, LVMSnapshot
-from pvl.backup import invoke
 
 log = logging.getLogger('pvl.backup.rsync')
 

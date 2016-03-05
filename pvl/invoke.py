@@ -1,13 +1,11 @@
 """
     Invoke external commands.
-
-    XXX: replace with pvl.invoke
 """
 
 import subprocess
 import logging
 
-log = logging.getLogger('pvl.backup.invoke')
+log = logging.getLogger('pvl.invoke')
 
 SUDO = '/usr/bin/sudo'
 

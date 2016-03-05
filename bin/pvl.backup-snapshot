@@ -11,8 +11,9 @@
 """
 
 import pvl.args
+from pvl import invoke
 from pvl.backup import __version__
-from pvl.backup import rsync, invoke
+from pvl.backup import rsync
 
 import optparse, ConfigParser
 import os, os.path, stat
