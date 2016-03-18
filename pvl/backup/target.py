@@ -10,45 +10,94 @@ class Error (Exception):
     pass
 
 class Interval:
+    """
+        Manage snapshot retention over time intervals using strftime formatting.
+
+        An interval link is created from the snapshot's datetime.strftime() using the given STRFTIME format, unless one already exists.
+        
+        When purging, the LIMIT most recent interval links are retained, and the older ones removed. Snapshots with no interval links remaining are also removed.
+
+        The resulting timestamp string is used as a filesystem name, and cannot contain any / characters.
+    """
+
+    METAVAR = '[LIMIT@]NAME:STRFTIME'
+
     @classmethod
-    def config (cls, interval):
-        if '@' in interval:
-            limit, interval = interval.split('@', 1)
+    def config (cls, value):
+        """
+            Parse from string syntax.
+
+            Raises ValueError.
+        """
+
+        if '@' in value:
+            limit, value = value.split('@', 1)
             limit = int(limit)
         else:
             limit = None
 
-        strftime = interval
+        if ':' in value:
+            name, value = value.split(':', 1)
+        else:
+            raise ValueError("Invalid interval missing 'NAME:'")
 
-        return cls(strftime,
+        strftime = value
+
+        return cls(name, strftime,
                 limit   = limit,
         )
 
-    def __init__ (self, strftime, limit=None):
+    def __init__ (self, name, strftime, limit=None):
+        if '/' in name:
+            raise ValueError("Invalid interval name: {name!r}".format(
+                name        = self.name,
+            ))
+
+
+        self.name = name
         self.strftime = strftime
         self.limit = limit
 
     def __str__(self):
         if self.limit:
-            return "{self.limit}@{self.strftime}".format(self=self)
+            return "{self.name}:{self.limit}@{self.strftime}".format(self=self)
         else:
-            return "{self.strftime}".format(self=self)
+            return "{self.name}:{self.strftime}".format(self=self)
 
     def format(self, now):
-        return now.strftime(self.strftime)
+        value = now.strftime(self.strftime)
 
-    def match(self, name):
+        if '/' in value:
+            raise ValueError("Invalid interval {name} strftime={strftime!r} value: {value!r}".format(
+                name        = self.name,
+                strftime    = self.strftime,
+                value       = value,
+            ))
+
+        return value
+
+    def parse(self, value):
         """
+            Parse datetime from formatted value, at whatever percision is used.
+
+
             Returns True if the given snapshot name matches our format.
         """
 
+        return datetime.datetime.strptime(value, self.strftime)
+    
+    def match(self, value):
+        """
+            Test if given value is a valid format() output.
+        """
+
         try:
-            datetime.datetime.strptime(name, self.strftime)
+            self.parse(value)
         except ValueError:
             return False
         else:
             return True
-
+ 
 class BaseTarget:
     # rsync options, in invoke.optargs format
     RSYNC_OPTIONS = {
