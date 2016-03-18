@@ -1,0 +1,246 @@
+#!/usr/bin/python3
+
+"""
+    Backup rsync sources into snapshot destinations.
+"""
+
+import datetime
+import logging
+import pvl.args
+import os.path
+
+from pvl.backup import __version__
+from pvl.backup.target import Interval, BaseTarget
+
+log = logging.getLogger('pvl.backup-target')
+
+class Error(Exception):
+    pass
+
+class Target(BaseTarget):
+    """
+        Use rsync hardlinks for incremental snapshots, and symlinks to manage intervals.
+    """
+        
+    SNAPSHOT_STRFTIME = '%Y%m%d-%H%M%S'
+        
+    @classmethod
+    def config (cls, path,
+            noop        = None,
+            **opts
+    ):
+        return super().config(
+                path            = path,
+                **opts
+        )
+
+    def __init__ (self, path, **opts):
+        super().__init__(**opts)
+
+        self.path = os.path.abspath(path)
+
+        self.snapshots_path = os.path.join(self.path, 'snapshots')
+        self.snapshot_path = os.path.join(self.path, 'snapshot')
+
+    def __str__ (self):
+        return str(self.path)
+
+    def setup (self, create=False):
+        """
+            Verify that the destination tree exists.
+        """
+
+        if os.path.exists(self.path):
+            pass
+        elif create:
+            log.warning("Create target directory: %s", self.path)
+
+            os.mkdir(self.path)
+        else:
+            raise Error("Missing target directory: {path}".format(path=self.path))
+
+        if os.path.exists(self.snapshots_path):
+            pass
+        elif create:
+            log.warn("Creating snapshots directory: %s", self.snapshots_path)
+            os.mkdir(self.snapshots_path)
+        else:
+            raise Error("Missing snapshots directory: {path}".format(path=self.snapshots_path))
+
+        # TODO: rename current -> snapshot
+
+    def snapshot (self, now):
+        """
+            Update the current snapshot to point to a new snapshot for the given datetime, containing changes from rsync.
+
+            Returns the name of the new snapshot on completion.
+
+            Raises rsync.RsyncError or Error.
+        """
+       
+        # new snapshot
+        snapshot_name = now.strftime(self.SNAPSHOT_STRFTIME)
+        snapshot_path = os.path.join(self.snapshots_path, snapshot_name)
+
+        if os.path.exists(snapshot_path):
+            raise Error("Snapshot already exists: {path}".format(path=snapshot_path))
+
+        if os.path.exists(self.snapshot_path):
+            # link-dest from previous snapshot
+            target_path = os.path.join(os.path.dirname(self.snapshot_path), os.readlink(self.snapshot_path))
+
+            log.info("%s: link-dest: %s", self, target_path)
+
+            # use as link-dest base; hardlinks unchanged files; target directory must be empty
+            link_dest = target_path
+
+        else :
+            link_dest = None
+        
+        # log
+        new_path = snapshot_path + '.new'
+
+        log.debug("%s: rsync %s -> %s --link-dest=%s", self, self.rsync_source, new_path, link_dest)
+
+        try:
+            self.rsync(new_path, 
+                    link_dest   = link_dest,
+            )
+
+        except pvl.backup.rsync.Error as ex:
+            # leave the .new snapshot in place to be purged
+            log.warning("%s: rsync failed: %s", ex)
+
+            # run() handles this
+            raise
+
+        else:
+            # move in to final name
+            log.debug("rename %s -> %s", new_path, snapshot_path)
+            os.rename(new_path, snapshot_path)
+
+        # update snapshot
+        symlink = os.path.join('snapshots', snapshot_name)
+
+        log.debug("symlink %s <- %s", symlink, self.snapshot_path)
+
+        if os.path.islink(self.snapshot_path):
+            os.unlink(self.snapshot_path)
+
+        os.symlink(symlink, self.snapshot_path)
+
+        return snapshot_name
+
+    def backup_interval (self, interval, now, snapshot, setup_create=False):
+        """
+            Create interval symlinks for managing retention of the given snapshot.
+
+            Intervals that already have a snapshot are skipped.
+        """
+
+        interval_name = interval.format(now)
+        interval_dirname = os.path.dirname(interval_name)
+
+        if not interval_dirname:
+            raise Error("Intervals must be of the form name/fmt: {interval}".format(interval=interval_name))
+
+        # setup
+        interval_dir = os.path.join(self.path, interval_dirname)
+
+        if os.path.isdir(interval_dir):
+            pass
+        elif setup_create:
+            log.warning("create interval dir: %s", interval_name)
+            os.mkdir(interval_dir)
+        else:
+            raise Error("Interval directory {dir} is missing, use --setup-create?".format(dir=interval_dir))
+    
+        # create
+        interval_path = os.path.join(self.path, interval_name)
+        snapshot_path = os.path.join(self.path, 'snapshots', snapshot)
+
+        if not os.path.exists(interval_path):
+            log.info("create interval: %s -> %s", interval_path, snapshot_path)
+            os.symlink(snapshot_path, interval_path)
+        else:
+            log.info("skip interval: %s -> %s", interval_path, os.readlink(interval_path))
+
+    def backup (self, setup_create=None):
+        """
+            Run backup, managing snapshots.
+        """
+
+        # start
+        now = datetime.datetime.now()
+
+        log.info("%s: backup %s", self, now)
+
+        snapshot = self.snapshot(now)
+
+        for interval in self.intervals:
+            self.backup_interval(interval, now, snapshot,
+                    setup_create    = setup_create,
+            )
+
+def main (args):
+    parser = pvl.args.parser(package='backup', module='target',
+            description = __doc__,
+            version     = __version__,
+    )
+
+    parser.add_argument('-n', '--noop', action='store_true',
+            help="No-op")
+
+    parser.add_argument('--setup-create', action='store_true',
+            help="Setup new backup destination")
+
+    parser.add_argument('--rsync-source', metavar='RSYNC-SOURCE',
+            help="Backup rsync source")
+    parser.add_argument('--rsync-option', metavar='-option', action='append', dest='rsync_options', default=[],
+            help="Pass rsync options")
+
+    parser.add_argument('--interval', metavar='LIMIT@STRFTIME', action='append', dest='interval', default=[],
+            help="Backup retention intervals")
+    parser.add_argument('--purge', action='store_true',
+            help="Purge old snapshots")
+
+    parser.add_argument('target', metavar='PATH', nargs='+',
+            help="rsync target directory")
+
+    args = pvl.args.parse(parser, args)
+
+    intervals = [Interval.config(interval) for interval in args.interval]
+
+    for target in args.target:
+        try:
+            target = Target.config(target,
+                    rsync_source    = args.rsync_source,
+                    rsync_options   = args.rsync_options,
+                    intervals       = intervals,
+                    noop            = args.noop
+            )
+        except Error as error:
+            log.error("%s: %s", target, error)
+            return 1
+
+        try:
+            target.setup(
+                    create          = args.setup_create,
+            )
+ 
+            target.backup(
+                    setup_create    = args.setup_create,
+            )
+
+            # purge intervals
+            if args.purge:
+                target.purge()
+
+        except Error as error:
+            log.exception("%s: %s", target, error)
+            return 2
+
+    return 0
+    
+if __name__ == '__main__':
+    pvl.args.main(main)

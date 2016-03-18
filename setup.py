@@ -28,6 +28,7 @@ setup(
     scripts = [
         'bin/pvl.backup-rsync', 
         'bin/pvl.backup-snapshot',
+        'bin/pvl.backup-target',
         'bin/pvl.backup-zfs',
     ],
 )
