@@ -5,6 +5,7 @@
 """
 
 import datetime
+import json
 import logging
 import os
 import os.path
@@ -147,11 +148,18 @@ class Target(BaseTarget):
 
         # rsync
         new_path = snapshot_path + '.new'
+        meta_path = snapshot_path + '.meta'
 
         log.debug("%s: rsync %s -> %s --link-dest=%s", self, self.rsync_source, new_path, link_dest)
 
+        meta = {
+                'rsync_source': str(self.rsync_source),
+                'link_dest':    link_dest,
+                'start':        datetime.datetime.utcnow().isoformat(),
+        }
+
         try:
-            self.rsync(new_path, 
+            stats = self.rsync(new_path, 
                     link_dest   = link_dest,
             )
 
@@ -163,9 +171,20 @@ class Target(BaseTarget):
             raise
 
         else:
+            meta['end'] = datetime.datetime.utcnow().isoformat()
+
             # move in to final name
             log.debug("rename %s -> %s", new_path, snapshot_path)
             os.rename(new_path, snapshot_path)
+
+            # write stats
+            if stats:
+                meta['stats'] = stats
+
+        # write out stats
+        log.debug("write out meta file: %s", meta_path)
+
+        json.dump(meta, open(meta_path, 'w'))
 
         # update snapshot
         symlink = os.path.join('snapshots', snapshot_name)
@@ -222,11 +241,16 @@ class Target(BaseTarget):
                 continue
 
             if not os.path.isdir(path):
-                log.warning("Ignore non-directory in snapshots dir: %s", name)
+                log.debug("Ignore non-directory in snapshots dir: %s", name)
                 continue
 
+            if name.endswith('.new'):
+                snapshot_name = name[:-4]
+            else:
+                snapshot_name = name
+
             try:
-                when = datetime.datetime.strptime(name, self.SNAPSHOT_STRFTIME)
+                when = datetime.datetime.strptime(snapshot_name, self.SNAPSHOT_STRFTIME)
             except ValueError as error:
                 raise Error("Invalid snapshot %s found: %s", name, error)
 
@@ -294,8 +318,15 @@ class Target(BaseTarget):
         """
             
         path = os.path.join(self.snapshots_path, name)
+        meta_path = path + '.meta'
         
         log.info("Purging snapshot %s: %s", name, path)
+
+        if os.path.exists(meta_path):
+            if self.noop:
+                log.warning("os.unlink(%r)", meta_path)
+            else:
+                os.unlink(meta_path)
 
         if self.noop:
             log.warning("shutil.rmtree(%r)", path)
