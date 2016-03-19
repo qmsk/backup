@@ -159,7 +159,7 @@ class Source (object):
         """
 
         with self.mount() as path:
-            return rsync_server(options, ['.', path], sudo=self.sudo, server=True)
+            return rsync_server(options, ['.', path], sudo=self.sudo)
 
     def rsync (self, options, dest):
         """
