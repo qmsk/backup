@@ -15,12 +15,14 @@ class Interval:
 
         An interval link is created from the snapshot's datetime.strftime() using the given STRFTIME format, unless one already exists.
         
-        When purging, the LIMIT most recent interval links are retained, and the older ones removed. Snapshots with no interval links remaining are also removed.
+        When purging, the LIMIT most recent interval links are retained, and the older ones removed. Snapshots with no interval links remaining are also removed. The LIMIT@ part may also be omitted for infinite retention.
 
         The resulting timestamp string is used as a filesystem name, and cannot contain any / characters.
     """
-
-    METAVAR = '[LIMIT@]NAME:STRFTIME'
+    
+    # XXX:  can't use [LIMIT@] due to argparse bug
+    #       https://bugs.python.org/issue11874
+    METAVAR = 'LIMIT@NAME:STRFTIME'
 
     @classmethod
     def config (cls, value):
