@@ -9,6 +9,7 @@ import logging
 import os.path
 import pvl.backup.mount
 import pvl.invoke
+import re
 
 from pvl.backup.lvm import LVM, LVMVolume, LVMSnapshot
 
@@ -16,14 +17,104 @@ log = logging.getLogger('pvl.backup.rsync')
 
 RSYNC = '/usr/bin/rsync'
 
+STATS_REGEX = re.compile(r'(.+?): ([0-9.]+)(?: (.+))?')
+
+def parse_stats (stdout):
+    """
+        Parse rsync --stats output.
+
+        Returns a { string: int/float } of values
+
+        >>> lines = '''
+        ... Number of files: 2 (reg: 1, dir: 1)
+        ... Number of created files: 0
+        ... Number of deleted files: 0
+        ... Number of regular files transferred: 0
+        ... Total file size: 29 bytes
+        ... Total transferred file size: 0 bytes
+        ... Literal data: 0 bytes
+        ... Matched data: 0 bytes
+        ... File list size: 0
+        ... File list generation time: 0.001 seconds
+        ... File list transfer time: 0.000 seconds
+        ... Total bytes sent: 65
+        ... Total bytes received: 19
+        ...
+        ... sent 65 bytes  received 19 bytes  168.00 bytes/sec
+        ... total size is 29  speedup is 0.35
+        ... '''.splitlines()
+        >>> for n, v in parse_stats(lines): print((n, v))
+        ('Number of files', 2)
+        ('Number of files: reg', 1)
+        ('Number of files: dir', 1)
+        ('Number of created files', 0)
+        ('Number of deleted files', 0)
+        ('Number of regular files transferred', 0)
+        ('Total file size', 29)
+        ('Total transferred file size', 0)
+        ('Literal data', 0)
+        ('Matched data', 0)
+        ('File list size', 0)
+        ('File list generation time', 0.001)
+        ('File list transfer time', 0.0)
+        ('Total bytes sent', 65)
+        ('Total bytes received', 19)
+    """
+    
+    for line in stdout:
+        match = STATS_REGEX.match(line)
+
+        if not match:
+            continue
+
+        name = match.group(1)
+        value = match.group(2)
+        unit = match.group(3)
+
+        if '.' in value:
+            value = float(value)
+        else:
+            value = int(value)
+
+        yield name, value
+
+        if unit and unit.startswith('('):
+            for part in unit.strip('()').split(', '):
+                subname, value = part.split(': ')
+
+                yield name + ': ' + subname, int(value)
+
+
 def rsync (options, paths, sudo=False):
     """
         Run rsync.
+
+        Returns a stats dict if there is any valid --stats output, None otherwise.
 
         Raises pvl.invoke.InvokeError
     """
 
     log.info("rsync %s %s", ' '.join(options), ' '.join(paths))
+
+    stdout = pvl.invoke.invoke(RSYNC, options + paths, sudo=sudo)
+
+    try:
+        stats = dict(parse_stats(stdout))
+    except ValueError as error:
+        log.exception("Invalid rsync --stats output: %s")
+
+        return None
+    else:
+        return stats
+
+def rsync_server (options, paths, sudo=False):
+    """
+        Run rsync in --server mode, passing through stdin/out.
+
+        Raises pvl.invoke.InvokeError
+    """
+
+    log.info("rsync-server %s %s", ' '.join(options), ' '.join(paths))
 
     # invoke directly; no option-handling, nor stdin/out redirection
     pvl.invoke.invoke(RSYNC, options + paths, stdin=True, stdout=True, sudo=sudo)
@@ -64,15 +155,15 @@ class Source (object):
 
     def rsync_sender (self, options):
         """
-            Run with --server --sender options.
+            Run with --server --sender options, passing through stdin/stdout.
         """
 
         with self.mount() as path:
-            return rsync(options, ['.', path], sudo=self.sudo)
+            return rsync_server(options, ['.', path], sudo=self.sudo, server=True)
 
     def rsync (self, options, dest):
         """
-            Run with the given destination.
+            Run with the given destination, returning optional stats dict.
         """
         
         with self.mount() as path:

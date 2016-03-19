@@ -167,6 +167,8 @@ class BaseTarget:
         """
             rsync source to given dest.
 
+            Return the --stats dict, or None if unparseable.
+
             Raises pvl.backup.rsync.Error
         """
         
@@ -175,14 +177,20 @@ class BaseTarget:
         if link_dest:
             # rsync links absolute paths..
             rsync_options['link-dest'] = os.path.abspath(link_dest)
+
+        # use stats
+        rsync_options['stats'] = True
  
         opts = pvl.invoke.optargs(**rsync_options)
 
         try:
             # run the rsync.RSyncServer; None as a placeholder will get replaced with the actual source
-            self.rsync_source.rsync(opts, dest_path)
+            stats = self.rsync_source.rsync(opts, dest_path)
 
         except pvl.backup.rsync.Error as error:
             log.warn("%s rsync error: %s", self, error)
             raise
+
+        else:
+            return stats
 
