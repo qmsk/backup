@@ -149,20 +149,34 @@ class ZFSTarget (BaseTarget):
         # manage intervals
         for interval in self.intervals:
             self.backup_interval(interval, now, snapshot)
-                        
-    def purge_interval(self, interval, snapshots):
+
+    def purge_interval(self, interval, snapshot_holds):
         """
             Purge snapshots for interval
         """
 
-        snapshots.sort(key=lambda t: t[0].name, reverse=True) # from highest down
+        # release duplicated snapshots for each interval period
+        interval_snapshots = { }
 
-        log.debug("%s purge interval=%s: snapshots=%s", self, interval.name, snapshots)
+        for snapshot, hold in sorted(snapshot_holds, key=lambda t: t[0].name, reverse=True): # newest first
+            newer_snapshot = interval_snapshots.get(hold)
 
-        for snapshot, hold_tag in snapshots[interval.limit:]:
-            log.info("%s: release %s @ %s", self, snapshot, hold_tag)
+            if newer_snapshot:
+                log.info("%s: release %s @ %s: deprecated by %s", self, snapshot, hold, newer_snapshot)
             
-            snapshot.release(hold_tag)
+                snapshot.release(hold)
+            else:
+                interval_snapshots[hold] = snapshot
+
+        # release oldest snapshots for each interval period
+        hold_snapshots = sorted(interval_snapshots.items(), key=lambda kv: kv[1].name, reverse=True) # newest first
+        
+        log.debug("%s purge interval=%s limit=%d snapshots=%d", self, interval.name, interval.limit, len(hold_snapshots))
+
+        for hold, snapshot in hold_snapshots[interval.limit:]:
+            log.info("%s: release %s @ %s", self, snapshot, hold)
+            
+            snapshot.release(hold)
 
     def purge_snapshots(self):
         """
@@ -188,7 +202,7 @@ class ZFSTarget (BaseTarget):
         """
         
         # collect { Interval.name: [(Snapshot, hold_tag)] }
-        interval_snapshots = {}
+        interval_snapshot_holds = {}
 
         for snapshot, hold in self.zfs.holds():
             try:
@@ -199,12 +213,12 @@ class ZFSTarget (BaseTarget):
 
             log.debug("%s: map snapshot %s hold %s -> interval %s", self, snapshot, hold, interval_name)
 
-            interval_snapshots.setdefault(interval_name, []).append((snapshot, hold))
+            interval_snapshot_holds.setdefault(interval_name, []).append((snapshot, hold))
         
         # release snapshots per limits
         for interval in self.intervals:
             if interval.limit:
-                snapshots = interval_snapshots.get(interval.name, [])
+                snapshots = interval_snapshot_holds.get(interval.name, [])
 
                 self.purge_interval(interval, snapshots)
         
