@@ -96,9 +96,22 @@ class Filesystem (object):
         else:
             zfs('create', *args)
 
-    def list_snapshots(self):
-        for name, in zfs('list', '-H', '-tsnapshot', '-oname', '-r', self.name):
-            snapshot = Snapshot.parse(name, noop=self.noop)
+    def parse_snapshot(self, name, **opts):
+        filesystem, snapshot = name.split('@', 1)
+
+        return Snapshot(self, snapshot,
+            noop    = self.noop,
+            **opts
+        )
+
+    def list_snapshots(self, *properties):
+        o = ','.join(('name', 'userrefs') + properties)
+
+        for name, userrefs, *propvalues in zfs('list', '-H', '-tsnapshot', '-o' + o, '-r', self.name):
+            snapshot = self.parse_snapshot(name,
+                    userrefs    = int(userrefs),
+                    properties  = {name: (None if value == '-' else value) for name, value in zip(properties, propvalues)},
+            )
 
             log.debug("%s: snapshot %s", self, snapshot)
 
@@ -111,24 +124,42 @@ class Filesystem (object):
 
         return self._snapshots
 
-    def snapshot(self, name):
+    def snapshot(self, name, properties=None):
         """
             Create and return a new Snapshot()
 
             Raises ZFSError if the snapshot already exists.
         """
+        
+        options = ['-o{property}={value}'.format(property=key, value=value) for key, value in properties.items() if value is not None]
 
-        snapshot = Snapshot(self, name, noop=self.noop)
+        snapshot = Snapshot(self, name, properties, noop=self.noop)
+        args = options + [snapshot]
 
         if self.noop:
             log.warning("zfs snapshot %s", snapshot)
         else:
-            zfs('snapshot', snapshot)
+            zfs('snapshot', *args)
             
         if self._snapshots:
             self._snapshots[name] = snapshot
 
         return snapshot
+
+    def holds (self, *snapshots):
+        """
+            List snapshot holds.
+
+            Yields (Snapshot, hold_tag).
+        """
+
+        if not snapshots:
+            snapshots = list(self.list_snapshots())
+
+        for name, tag, timestamp in zfs('holds', '-H', *snapshots):
+            snapshot = self.parse_snapshot(name)
+
+            yield snapshot, tag.strip()
 
     def bookmark(self, snapshot, bookmark):
         if self.noop:
@@ -143,13 +174,19 @@ class Snapshot (object):
 
         return cls(filesystem, snapshot, **opts)
 
-    def __init__ (self, filesystem, name, noop=None):
+    def __init__ (self, filesystem, name, properties={}, noop=None, userrefs=None):
         self.filesystem = filesystem
         self.name = name
+        self.properties = properties
+
         self.noop = noop
+        self.userrefs = userrefs
 
     def __str__ (self):
         return '{filesystem}@{name}'.format(name=self.name, filesystem=self.filesystem)
+
+    def __getitem__ (self, name):
+        return self.properties[name]
 
     # XXX: invalidate ZFS._snapshots cache
     def destroy (self):
@@ -157,3 +194,13 @@ class Snapshot (object):
             log.warning("zfs destroy %s", self)
         else:
             zfs('destroy', self)
+
+    def hold (self, tag):
+        zfs('hold', tag, self)
+
+    def holds (self):
+        for name, tag, timestamp in zfs('holds', self):
+            yield tag
+
+    def release(self, tag):
+        zfs('release', tag, self)
