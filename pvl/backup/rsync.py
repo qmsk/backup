@@ -5,6 +5,7 @@
 """
 
 import contextlib
+import datetime
 import logging
 import os.path
 import pvl.backup.mount
@@ -12,6 +13,7 @@ import pvl.invoke
 import re
 
 from pvl.backup.lvm import LVM, LVMVolume, LVMSnapshot
+from pvl.backup import zfs
 
 log = logging.getLogger('pvl.backup.rsync')
 
@@ -219,6 +221,64 @@ class LVMSource(Source):
  
     def __str__ (self):
         return 'lvm:{volume}'.format(volume=self.lvm_volume)
+
+class ZFSSource(Source):
+    """
+        Backup ZFS by snapshotting + mounting it.
+    """
+
+    def __init__ (self, zfs, path='/', sudo=None):
+        """
+            zfs             - pvl.backup.zfs.ZFS
+            path            - str: filesystem path within lvm volume; no leading /
+
+            sudo            - use sudo for LVM operations
+        """
+        
+        self.zfs = zfs
+        self.path = path.lstrip('/')
+        self.sudo = sudo
+    
+    @contextlib.contextmanager
+    def snapshot(self):
+        """
+            With ZFS snapshot.
+        """
+
+        snapshot_name = 'pvl-backup_{timestamp}'.format(timestamp=datetime.datetime.now().isoformat())
+        
+        # snapshot
+        log.info("Creating ZFS snapshot: %s", self.zfs)
+
+        snapshot = self.zfs.snapshot(snapshot_name, {
+            'pvl-backup:source': self.path,
+        })
+
+        try:
+            yield snapshot
+        finally:
+            snapshot.destroy()
+
+    @contextlib.contextmanager
+    def mount (self):
+        """
+            Mount ZFS snapshot of volume.
+        """
+
+        with self.snapshot() as snapshot:
+            # mount
+            log.info("Mounting ZFS snapshot: %s", snapshot)
+
+            with pvl.backup.mount.mount(str(snapshot),
+                    fstype      = 'zfs',
+                    name_hint   = 'zfs_' + str(self.zfs).replace('/', '_') + '_',
+                    readonly    = True,
+                    sudo        = self.sudo,
+            ) as mountpoint:
+                yield mountpoint.path + '/' + self.path
+ 
+    def __str__ (self):
+        return 'zfs:{zfs}'.format(zfs=self.zfs)
  
 def parse_command (command):
     """
@@ -358,16 +418,15 @@ def parse_source (path, restrict_paths=None, allow_remote=True, sudo=None, lvm_o
             raise SourceError("Restricted path")
 
     if path.startswith('/'):
-        # direct filesystem path
         log.debug("filesystem: %s", path)
 
         return Source(path,
                 sudo    = sudo,
         )
-
+    
     elif path.startswith('lvm:'):
         _, path = path.split(':', 1)
-
+    
         # LVM VG
         try:
             if ':' in path:
@@ -400,7 +459,30 @@ def parse_source (path, restrict_paths=None, allow_remote=True, sudo=None, lvm_o
                 lvm_opts        = lvm_opts,
         )
 
-    elif ':' in path:
+    elif path.startswith('zfs:'):
+        _, path = path.split(':', 1)
+
+        if path.startswith('/'):
+            device, mount, fstype, name = pvl.backup.mount.find(path)
+
+            log.debug("%s: mount=%s fstype=%s device=%s name=%s", path, mount, fstype, device, name)
+
+            if fstype != 'zfs':
+                raise SourceError("Not a ZFS mount %s: mount=%s fstype=%s", path, mount, device)
+        else:
+            device = path
+            name = ''
+
+        # lookup
+        log.debug("ZFS %s: %s / %s", path, device, name)
+
+        # open
+        return ZFSSource(pvl.backup.zfs.open(device),
+                path    = name,
+                sudo    = sudo,
+        )
+        
+    elif ':' in path: # remote host
         if not allow_remote:
             raise SourceError("Invalid remote path")
 
@@ -410,7 +492,6 @@ def parse_source (path, restrict_paths=None, allow_remote=True, sudo=None, lvm_o
         return Source(path,
                 sudo        = sudo,
         )
-       
     else:
         # invalid
         raise SourceError("Unknown path format")
