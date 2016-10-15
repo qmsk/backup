@@ -24,16 +24,18 @@ class Mount (object) :
     UMOUNT  = '/bin/umount'
 
 
-    def __init__ (self, dev, mnt, readonly=False, sudo=None) :
+    def __init__ (self, dev, mnt, fstype=None, readonly=False, sudo=None) :
         """
             dev         - device path
             mnt         - mount path
+            fstype      - explicit fstype
             readonly    - mount readonly
             sudo        - invoke sudo
         """
 
         self.dev = dev
         self.mnt = mnt
+        self.fstype = fstype
         self.readonly = readonly
         self.sudo = sudo
 
@@ -64,11 +66,19 @@ class Mount (object) :
         if self.is_mounted() :
             raise MountError("Mountpoint is already mounted: {mnt}".format(mnt=self.mnt))
 
-        if not os.path.exists(self.dev) :
+        if not os.path.exists(self.dev) and not self.fstype :
             raise MountError("Device does not exist: {dev}".format(dev=self.dev))
 
         # mount
-        invoke(self.MOUNT, optargs(self.dev, self.mnt, options=self.options()), sudo=self.sudo)
+        options = self.options()
+        args = (
+            '-t' + self.fstype if self.fstype else None,
+            self.dev,
+            self.mnt,
+            '-o' + options if options else None,
+        )
+
+        invoke(self.MOUNT, args, sudo=self.sudo)
 
     def is_mounted (self) :
         """
