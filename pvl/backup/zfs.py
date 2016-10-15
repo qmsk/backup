@@ -88,7 +88,7 @@ class Filesystem (object):
             return mountpoint
 
     def create(self, properties={}):
-        options = ['-o{property}={value}'.format(property=key, value=value) for key, value in properties.iteritems() if value is not None]
+        options = ['-o{property}={value}'.format(property=key, value=value) for key, value in properties.items() if value is not None]
         args = options + [self.name]
         
         if self.noop:
