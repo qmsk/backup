@@ -110,6 +110,8 @@ class BaseTarget:
         'delete':           True,
     }
     
+    SNAPSHOT_STRFTIME = '%Y%m%d-%H%M%S'
+    
     @classmethod
     def config(cls,
             rsync_source=None,
@@ -157,6 +159,9 @@ class BaseTarget:
         self.rsync_source = rsync_source
         self.rsync_options = rsync_options
         self.intervals = intervals
+    
+    def setup (self, create=False):
+        abstract
 
     def mount(self):
         """
@@ -195,4 +200,29 @@ class BaseTarget:
 
         else:
             return stats
+
+    def snapshot (self, now):
+        """
+            Update the current snapshot to point to a new snapshot for the given datetime, containing changes from rsync.
+
+            Returns the name of the new snapshot on completion.
+
+            Raises rsync.RsyncError or Error.
+        """
+    
+        abstract
+
+    def backup (self):
+        """
+            Create snapshot with rsync, link intervals.
+        """
+        
+        abstract
+
+    def purge(self):
+        """
+            Unlink intervals per limits, purge any unlinked snapshots.
+        """
+ 
+        abstract
 

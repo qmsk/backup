@@ -70,8 +70,6 @@ class Target(BaseTarget):
         Use rsync hardlinks for incremental snapshots, and symlinks to manage intervals.
     """
         
-    SNAPSHOT_STRFTIME = '%Y%m%d-%H%M%S'
-        
     @classmethod
     def config (cls, path,
             **opts
