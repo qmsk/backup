@@ -162,3 +162,42 @@ def mount (dev, mnt=None, name_hint='tmp', **kwargs) :
             log.debug("cleanup tmp mnt: %s", tmpdir)
             os.rmdir(tmpdir)
 
+
+def mounts():
+    """
+        Yield mounted filesystems
+    """
+
+    for line in open('/proc/mounts'):
+        parts = line.split()
+        
+        dev = parts[0]
+        mount = parts[1]
+        fstype = parts[2]
+
+        yield dev, mount, fstype
+
+def find (path):
+    """
+        Find mount point for given file path.
+
+        Returns (device path, mount path, fstype, file path)
+    """
+
+    name = ''
+
+    while not os.path.ismount(path) and path != '/':
+        path, basename = os.path.split(path)
+
+        name = os.path.join(basename, name)
+
+        log.debug("%s / %s", path, name)
+        
+    # find mount
+    for device, mount, fstype in mounts():
+        if mount == path:
+            break
+    else:
+        raise FileNotFoundError(path)
+
+    return device, mount, fstype, name
