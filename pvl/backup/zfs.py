@@ -36,6 +36,17 @@ def zfs(*args):
 
     return [line.strip().split('\t') for line in stdout]
 
+
+def open(name, **opts):
+    """
+        Return Filesystem for pool/zfs name.
+    """
+
+    zfs = Filesystem(name, **opts)
+    zfs.check()
+
+    return zfs
+
 class Filesystem (object):
     @classmethod
     def list(cls):
