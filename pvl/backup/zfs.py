@@ -168,7 +168,7 @@ class Filesystem (object):
             snapshots = list(self.list_snapshots())
 
         for name, tag, timestamp in zfs('holds', '-H', *snapshots):
-            snapshot = self.parse_snapshot(name)
+            snapshot = self.parse_snapshot(name.strip())
 
             yield snapshot, tag.strip()
 
