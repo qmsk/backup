@@ -352,7 +352,7 @@ class Target(BaseTarget):
         # purge unlinked snapshots
         linked_snapshots = {snapshot_name for snapshot_name, interval_path in interval_snapshots}
 
-        for snapshot_name in snapshots & linked_snapshots:
+        for snapshot_name in sorted(snapshots & linked_snapshots):
             log.debug("Keeping snapshot %s", snapshot_name)
 
         for snapshot_name in snapshots - linked_snapshots:
