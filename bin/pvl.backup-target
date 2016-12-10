@@ -49,10 +49,11 @@ def walk_symlinks (tree, recurse=0, ignore=False) :
             log.debug("%s: tree: %s", tree, name)
             
             if recurse > 0:
-                yield from walk_symlinks(path,
+                for path, target in walk_symlinks(path,
                         recurse = recurse - 1,
                         ignore  = ignore,
-                )
+                ):
+                    yield path, target
 
         elif stat.S_ISLNK(st.st_mode):
             # found
