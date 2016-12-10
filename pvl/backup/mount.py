@@ -78,7 +78,7 @@ class Mount (object) :
             '-o' + options if options else None,
         )
 
-        invoke(self.MOUNT, args, sudo=self.sudo)
+        invoke(self.MOUNT, [arg for arg in args if arg is not None], sudo=self.sudo)
 
     def is_mounted (self) :
         """
