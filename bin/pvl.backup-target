@@ -57,7 +57,7 @@ def walk_symlinks (tree, recurse=0, ignore=False) :
 
         elif stat.S_ISLNK(st.st_mode):
             # found
-            target = os.path.join(tree, os.readlink(path))
+            target = os.path.normpath(os.path.join(tree, os.readlink(path)))
 
             log.debug("%s: link: %s -> %s", tree, name, target)
 
