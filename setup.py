@@ -6,11 +6,11 @@ setup(
     name            = 'pvl-backup',
     version         = '1.2-dev',
 
-    description     = "Päivölä rsync backup utilities",
+    description     = u"Päivölä rsync backup utilities",
     url             = 'http://verkko.paivola.fi/hg/pvl-backup/',
     license         = 'MIT',
 
-    author          = 'Tero Marttila',
+    author          = u"Tero Marttila",
     author_email    = 'terom@paivola.fi',
 
     namespace_packages = [ 
