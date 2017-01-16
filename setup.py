@@ -4,7 +4,7 @@ from distutils.core import setup
 
 setup(
     name            = 'pvl-backup',
-    version         = '1.2.3',
+    version         = '1.2.4',
 
     description     = "Paivola rsync backup utilities",
     url             = 'http://verkko.paivola.fi/hg/pvl-backup/',
