@@ -6,7 +6,7 @@ setup(
     name            = 'pvl-backup',
     version         = '1.2.3',
 
-    description     = "Päivölä rsync backup utilities",
+    description     = "Paivola rsync backup utilities",
     url             = 'http://verkko.paivola.fi/hg/pvl-backup/',
     license         = 'MIT',
 
