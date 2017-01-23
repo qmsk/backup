@@ -430,6 +430,8 @@ def main (args):
         except Error as error:
             log.error("%s: %s", target, error)
             return 1
+        else:
+            log.info("%s", target)
 
         try:
             target.setup(
@@ -437,7 +439,7 @@ def main (args):
             )
             
             if args.backup is False:
-                log.info("Skip backup")
+                log.debug("Skip backup")
             else:
                 target.backup(
                         setup_create    = args.setup_create,
