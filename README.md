@@ -2,6 +2,53 @@
 
 Supports incremental rsync backups over SSH, from remote LVM and ZFS filesystem snapshots to local `rsync --link-dest` or ZFS snapshots.
 
+## Install
+
+    virtualenv -p python3 /opt/pvl-backup && /opt/pvl-backup/bin/pip install \
+        git+https://gitlab.paivola.fi/tech/pvl-common.git@1.0.0 
+        git+https://gitlab.paivola.fi/tech/pvl-backup.git@1.2.4
+
+## Usage
+
+### Scripts
+
+The `pvl.backup-*` scripts does not use any configuration file, all configuration is in the form of options.
+You can create a backup script file for each backup target, such as:
+
+#### `/etc/pvl/backup/targets/test`
+```
+#!/bin/bash
+
+exec /opt/pvl-backup/bin/pvl.backup-target /srv/backup/test \
+        --rsync-source='pvl-backup@test.example.com:lvm:raid10/test-root' \
+        --rsync-option='rsh=ssh -F /srv/backup/.ssh/config' \
+        --rsync-option='exclude-from=/etc/pvl/backup/rsync.exclude' \
+        --interval='10@recent:%Y%m%d-%H%M%S' \
+        --interval='7@day:%Y-%m-%d' \
+        --interval='4@week:%Y-%W' \
+        "$@"
+```
+
+### `cron`
+Use a wrapper script such as the following to run multiple targets from cron.
+
+You probably want to have cron run the wrapper script with `--purge`:
+
+```
+15 22 * * *   root         /etc/pvl/backup/targets.sh --purge
+```
+
+#### `/etc/pvl/backup/targets.sh`
+```
+#!/bin/bash
+
+for target in /etc/pvl/backup/targets/*; do
+        [ -x $target ] || continue
+
+        $target "$@"
+done
+```
+
 ## Features
 
 ### Restricted `rsync`for `.ssh/authorized_keys` `command=`
