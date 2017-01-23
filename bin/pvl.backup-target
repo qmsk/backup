@@ -363,7 +363,7 @@ class Target(BaseTarget):
             Yield (name, meta) for snapshots/*.met
         """
 
-        for snapshot in self.iter_snapshots():
+        for snapshot in sorted(self.iter_snapshots()):
             path = os.path.join(self.snapshots_path, snapshot + '.meta')
 
             if os.path.exists(path):
