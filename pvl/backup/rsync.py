@@ -86,6 +86,56 @@ def parse_stats (stdout):
 
                 yield name + ': ' + subname, int(value)
 
+FORMAT_UNITS = [
+    (10**12,    'T'),
+    (10**9,     'G'),
+    (10**6,     'M'),
+    (10**3,     'K'),
+]
+
+def format_units(value):
+    for quant, unit in FORMAT_UNITS:
+        if value > quant:
+            return "{:3.2f}{:}".format(value / quant, unit)
+    
+    return "{:3.2f} ".format(value)
+
+def format_percentage(ratio):
+    return "{:3.2f}".format(ratio * 100.0)
+
+def print_stats(rows):
+    """
+        Output stats from iterable of (name, duration, stats).
+    """
+
+    ROW = "{name:18} {time:10} | {files:>8} / {files_total:>8} = {files_pct:>6}% | {size:>8} / {size_total:>8} = {size_pct:>6}% | {send:>8} {recv:>8}"
+
+    print(ROW.format(
+            name        = "NAME",
+            time        = "TIME",
+            files       = "FILES",
+            files_total = "TOTAL",
+            files_pct   = "",
+            size        = "SIZE",
+            size_total  = "TOTAL",
+            size_pct    = "",
+            send        = "SEND",
+            recv        = "RECV",
+    ))
+
+    for name, duration, stats in rows:
+        print(ROW.format(
+            name        = name,
+            time        = format_units(duration.total_seconds()),
+            files       = format_units(stats["Number of files transferred"]),
+            files_total = format_units(stats["Number of files"]),
+            files_pct   = format_percentage(stats["Number of files transferred"] / stats["Number of files"]),
+            size        = format_units(stats["Total transferred file size"]),
+            size_total  = format_units(stats["Total file size"]),
+            size_pct    = format_percentage(stats["Total transferred file size"] / stats["Total file size"]),
+            send        = format_units(stats["Total bytes sent"]),
+            recv        = format_units(stats["Total bytes received"]),
+        ))
 
 def rsync (options, paths, sudo=False):
     """

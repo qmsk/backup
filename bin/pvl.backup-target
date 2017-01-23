@@ -358,6 +358,32 @@ class Target(BaseTarget):
         for snapshot_name in snapshots - linked_snapshots:
             self.purge_snapshot(snapshot_name)
 
+    def meta(self):
+        """
+            Yield (name, meta) for snapshots/*.met
+        """
+
+        for snapshot in self.iter_snapshots():
+            path = os.path.join(self.snapshots_path, snapshot + '.meta')
+
+            if os.path.exists(path):
+                with open(path) as file:
+                    meta = json.load(file)
+
+                yield snapshot, meta
+
+META_TIMESTAMP_STRFTIME = '%Y-%m-%dT%H:%M:%S.%f'
+
+def meta_duration(meta):
+    """
+        Return datetime.timedelta from meta dict.
+    """
+
+    start = datetime.datetime.strptime(meta['start'], META_TIMESTAMP_STRFTIME)
+    end = datetime.datetime.strptime(meta['end'], META_TIMESTAMP_STRFTIME)
+
+    return end - start
+
 def main (args):
     parser = pvl.args.parser(package='backup', module='target',
             description = __doc__,
@@ -375,13 +401,21 @@ def main (args):
     parser.add_argument('--rsync-option', metavar='-option', action='append', dest='rsync_options', default=[],
             help="Pass rsync options")
 
+    parser.add_argument('--no-backup', action='store_false', dest='backup',
+            help="Skip backup snapshot (and purge)")
     parser.add_argument('--interval', metavar=Interval.METAVAR, action='append', dest='intervals', type=Interval.config, default=[],
             help="Backup retention intervals")
     parser.add_argument('--purge', action='store_true',
             help="Purge old snapshots")
+    parser.add_argument('--stats', action='store_true',
+            help="Output stats from snapshots")
 
     parser.add_argument('target', metavar='PATH', nargs='+',
             help="rsync target directory")
+
+    parser.set_defaults(
+            backup      = None,
+    )
 
     args = pvl.args.parse(parser, args)
 
@@ -401,15 +435,21 @@ def main (args):
             target.setup(
                     create          = args.setup_create,
             )
- 
-            target.backup(
-                    setup_create    = args.setup_create,
-                    purge           = args.purge,
-            )
+            
+            if args.backup is False:
+                log.info("Skip backup")
+            else:
+                target.backup(
+                        setup_create    = args.setup_create,
+                        purge           = args.purge,
+                )
 
             # purge snapshots
             if args.purge:
                 target.purge()
+
+            if args.stats:
+                pvl.backup.rsync.print_stats([(name, meta_duration(meta), meta['stats']) for name, meta in  target.meta()])
 
         except Error as error:
             log.exception("%s: %s", target, error)
