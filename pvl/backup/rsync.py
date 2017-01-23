@@ -100,8 +100,11 @@ def format_units(value):
     
     return "{:3.2f} ".format(value)
 
-def format_percentage(ratio):
-    return "{:3.2f}".format(ratio * 100.0)
+def format_percentage(num, total):
+    if total > 0.0:
+        return "{:3.2f}".format(num / total * 100.0)
+    else:
+        return " "
 
 def print_stats(rows):
     """
@@ -129,10 +132,10 @@ def print_stats(rows):
             time        = format_units(duration.total_seconds()),
             files       = format_units(stats["Number of files transferred"]),
             files_total = format_units(stats["Number of files"]),
-            files_pct   = format_percentage(stats["Number of files transferred"] / stats["Number of files"]),
+            files_pct   = format_percentage(stats["Number of files transferred"], stats["Number of files"]),
             size        = format_units(stats["Total transferred file size"]),
             size_total  = format_units(stats["Total file size"]),
-            size_pct    = format_percentage(stats["Total transferred file size"] / stats["Total file size"]),
+            size_pct    = format_percentage(stats["Total transferred file size"], stats["Total file size"]),
             send        = format_units(stats["Total bytes sent"]),
             recv        = format_units(stats["Total bytes received"]),
         ))
