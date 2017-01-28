@@ -392,6 +392,8 @@ def main (args):
 
     parser.add_argument('-n', '--noop', action='store_true',
             help="No-op")
+    parser.add_argument('--sudo', action='store_true',
+            help="Run rsync via sudo")
 
     parser.add_argument('--setup-create', action='store_true',
             help="Setup new backup destination")
@@ -425,7 +427,8 @@ def main (args):
                     rsync_source    = args.rsync_source,
                     rsync_options   = args.rsync_options,
                     intervals       = args.intervals,
-                    noop            = args.noop
+                    noop            = args.noop,
+                    sudo            = args.sudo,
             )
         except Error as error:
             log.error("%s: %s", target, error)

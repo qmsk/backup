@@ -116,6 +116,7 @@ class BaseTarget:
     def config(cls,
             rsync_source=None,
             rsync_options=None,
+            sudo=None,
             **opts
     ):
         """
@@ -124,7 +125,9 @@ class BaseTarget:
 
         if rsync_source:
             try:
-                rsync_source    = pvl.backup.rsync.parse_source(rsync_source)
+                rsync_source    = pvl.backup.rsync.parse_source(rsync_source,
+                        sudo    = sudo,
+                )
             except pvl.backup.rsync.SourceError as error:
                 raise Error("--source=%s: %s", source, error)
        
