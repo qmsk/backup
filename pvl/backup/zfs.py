@@ -1,3 +1,5 @@
+import contextlib
+import datetime
 import logging
 
 import pvl.invoke
@@ -36,6 +38,23 @@ def zfs(*args, sudo=None):
 
     return [line.strip().split('\t') for line in stdout]
 
+@contextlib.contextmanager
+def snapshot(zfs, snapshot_name=None, **opts):
+    """
+        With ZFS snapshot.
+
+        Generates a temporary pvl-backup_* snapshot by default.
+    """
+
+    if snapshot_name is None:
+        snapshot_name = 'pvl-backup_{timestamp}'.format(timestamp=datetime.datetime.now().isoformat())
+
+    snapshot = zfs.snapshot(snapshot_name, **opts)
+
+    try:
+        yield snapshot
+    finally:
+        snapshot.destroy()
 
 def open(name, **opts):
     """

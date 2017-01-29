@@ -292,25 +292,16 @@ class ZFSSource(Source):
         self.path = path.lstrip('/')
         self.sudo = sudo
     
-    @contextlib.contextmanager
     def snapshot(self):
         """
             With ZFS snapshot.
         """
 
-        snapshot_name = 'pvl-backup_{timestamp}'.format(timestamp=datetime.datetime.now().isoformat())
-        
-        # snapshot
         log.info("Creating ZFS snapshot: %s", self.zfs)
 
-        snapshot = self.zfs.snapshot(snapshot_name, {
+        return pvl.backup.zfs.snapshot(self.zfs, properties={
             'pvl-backup:source': self.path,
         })
-
-        try:
-            yield snapshot
-        finally:
-            snapshot.destroy()
 
     @contextlib.contextmanager
     def mount (self):
