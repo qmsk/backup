@@ -69,7 +69,13 @@ class Wrapper:
             )
 
         else: # zfs send tank/foo@
-            TODO("send from most recent snapshot")
+            # send from most recent snapshot
+            snapshot = zfs.last_snapshot()
+            
+            snapshot.send(
+                incremental = incremental_snapshot,
+                properties  = args.properties,
+            )
 
         return 0
 
