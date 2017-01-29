@@ -1,0 +1,121 @@
+#!/usr/bin/python3
+
+"""
+    SSH authorized_keys command="..." wrapper
+
+    Testing:
+        virtualenv opt && ./opt/bin/pip install -e
+
+        sudo SSH_ORIG_COMMAND='zfs send ...' ./opt/bin/pvl.backup-ssh-command
+
+        ./opt/bin/pvl.backup-ssh-command -- zfs send ...
+
+"""
+
+from pvl.backup import __version__
+
+import argparse
+import logging
+import os.path
+
+import pvl.args
+
+log = logging.getLogger('pvl.backup-ssh-command')
+
+class Wrapper:
+    """
+        Command wrapper
+    """
+
+    def __init__(self, noop=None, sudo=None):
+        self.noop = noop
+        self.sudo = sudo
+
+    def zfs_send(self, args):
+        log.info("zs send: %s", args)
+
+        return 1
+
+    def zfs(self, args):
+        parser = argparse.ArgumentParser(prog='zfs')
+        subparsers = parser.add_subparsers(dest='command')
+
+        parser_send = subparsers.add_parser('send')
+        parser_send.add_argument('-i', dest='incremental_snapshot', metavar='SNAPSHOT', help="Incremental send as a single snapshot")
+        parser_send.add_argument('-I', dest='incremental_snapshot_all', metavar='SNAPSHOT', help="Incremental send as a series snapshot")
+        parser_send.add_argument('-p', dest='properties', action='store_true', help="Send dataset properties")
+        parser_send.add_argument('zfs', metavar='ZFS', help="Source ZFS filesystem, with optional @snapshot")
+
+        args = parser.parse_args(args)
+
+        if args.command == 'send':
+            return self.zfs_send(args)
+        else:
+            log.error("Unsupported ZFS command: %s", args.command)
+            return 1
+
+    def __call__(self, cmd, args):
+        name = os.path.basename(cmd)
+
+        log.debug("%s %s", name, args)
+
+        if name == 'zfs':
+            return self.zfs(args)
+        else:
+            log.error("Unsupported command: %s", cmd)
+            return 1
+
+        return 0
+
+def main (args):
+    """
+        Run, with full argv
+    """
+
+    parser = pvl.args.parser(package='backup', module='ssh-command',
+            description = __doc__,
+            version     = __version__,
+    )
+
+    parser.add_argument('command', nargs='*', metavar='CMD',
+            help="Wrapped command")
+
+    parser.add_argument('-n', '--noop', action='store_true', default=False,
+            help="Parse command, but do not execute")
+
+    parser.add_argument('--sudo',             action='store_true',
+            help="Execute privileges commands with sudo")
+
+    parser.set_defaults(
+
+    )
+
+    # parse
+    args = pvl.args.parse(parser, args)
+    
+    # from args (as given by `rsync -e pvl.backup-rsync`) -> 'pvl.backup-rsync <host> (<command> ...)'
+    if args.command:
+        command_parts = args.command
+
+    elif 'SSH_ORIGINAL_COMMAND' in os.environ:
+        # from ssh authorized_keys command="..."
+        command_parts = shlex.split(os.environ.get('SSH_ORIGINAL_COMMAND'))
+
+    else:
+        parser.error("No wrapped command given")
+
+    # run
+    try:
+        wrapper = Wrapper(
+            noop        = args.noop,
+            sudo        = args.sudo,
+        )
+        
+        return wrapper(command_parts[0], command_parts[1:])
+
+    except Exception as error:
+        log.exception("Internal error: %s", error)
+        return 3
+
+if __name__ == '__main__':
+    pvl.args.main(main)

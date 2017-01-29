@@ -27,6 +27,7 @@ setup(
     # binaries
     scripts = [
         'bin/pvl.backup-rsync', 
+        'bin/pvl.backup-ssh-command',
         'bin/pvl.backup-target',
         'bin/pvl.backup-zfs',
     ],
