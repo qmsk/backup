@@ -25,9 +25,9 @@ class CommandError (Error):
 
     pass
 
-def zfs(*args, sudo=None):
+def zfs(*args, **opts):
     try:
-        stdout = pvl.invoke.invoke(ZFS, pvl.invoke.optargs(*args), sudo=sudo)
+        stdout = pvl.invoke.invoke(ZFS, pvl.invoke.optargs(*args), **opts)
     except pvl.invoke.InvokeError as error:
         if error.exit == 1:
             raise ZFSError(error.stderr)
@@ -35,8 +35,11 @@ def zfs(*args, sudo=None):
             raise CommandError(error.stderr)
         else:
             raise Error(error.stderr)
-
-    return [line.strip().split('\t') for line in stdout]
+    
+    if stdout is None:
+        return None
+    else:
+        return [line.strip().split('\t') for line in stdout]
 
 @contextlib.contextmanager
 def snapshot(zfs, snapshot_name=None, **opts):
@@ -104,6 +107,18 @@ class Filesystem (object):
         else:
             return zfs(*args, sudo=self.sudo)
 
+    def zfs_stream (self, *args):
+        """
+            ZFS wrapper for sudo+noop
+
+            Run commands that are not executed when --noop, and require stdin+stdout
+        """
+
+        if self.noop:
+            return log.warning("noop: zfs %v", args)
+        else:
+            return zfs(*args, stdin=True, stdout=True, sudo=self.sudo)
+ 
     def check(self):
         """
             Raises ZFSError if unable to list the zfs filesystem.
@@ -241,3 +256,17 @@ class Snapshot (object):
 
     def release(self, tag):
         self.filesystem.zfs_write('release', tag, self)
+
+    def send(self, incremental=None, properties=False):
+        """
+            Write out ZFS contents up to this snapshot
+
+            incremental: Snapshot, None     - send incremental from given snapshot    
+            properties: bool                - send ZFS properties
+        """
+
+        self.filesystem.zfs_stream('send', 
+            '-p' if properties else None, 
+            '-i' + str(incremental) if incremental else None,
+            self
+        )
