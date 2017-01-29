@@ -530,7 +530,7 @@ def parse_source (path, restrict_paths=None, allow_remote=True, sudo=None, lvm_o
         log.debug("ZFS %s: %s / %s", path, device, name)
 
         # open
-        return ZFSSource(pvl.backup.zfs.open(device),
+        return ZFSSource(pvl.backup.zfs.open(device, sudo=sudo),
                 path    = name,
                 sudo    = sudo,
         )
