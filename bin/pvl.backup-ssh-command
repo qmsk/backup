@@ -19,6 +19,7 @@ import logging
 import os.path
 
 import pvl.args
+import pvl.backup.zfs
 
 log = logging.getLogger('pvl.backup-ssh-command')
 
@@ -34,15 +35,50 @@ class Wrapper:
     def zfs_send(self, args):
         log.info("zs send: %s", args)
 
-        return 1
+        if '@' in args.zfs:
+            zfs_name, snapshot_name = args.zfs.split('@', 1)
+        else:
+            zfs_name = args.zfs
+            snapshot_name = None
+
+        zfs = pvl.backup.zfs.open(zfs_name,
+            noop    = self.noop,
+            sudo    = self.sudo,
+        )
+        
+        if args.incremental_snapshot:
+            incremental_snapshot = zfs.snapshots[args.incremental_snapshot]
+        else:
+            incremental_snapshot = None
+    
+        if snapshot_name is None: # zfs send tank/foo
+            # send from temporary snapshot
+            with pvl.backup.zfs.snapshot(zfs, properties={'pvl-backup:send': incremental_snapshot}) as snapshot:
+                snapshot.send(
+                    incremental = incremental_snapshot,
+                    properties  = args.properties,
+                )
+
+        elif snapshot_name: # zfs send tank/foo@xxx
+            # send from given snapshot
+            snapshot = zfs.snapshots[snapshot_name]
+
+            snapshot.send(
+                incremental = incremental_snapshot,
+                properties  = args.properties,
+            )
+
+        else: # zfs send tank/foo@
+            TODO("send from most recent snapshot")
+
+        return 0
 
     def zfs(self, args):
         parser = argparse.ArgumentParser(prog='zfs')
         subparsers = parser.add_subparsers(dest='command')
 
         parser_send = subparsers.add_parser('send')
-        parser_send.add_argument('-i', dest='incremental_snapshot', metavar='SNAPSHOT', help="Incremental send as a single snapshot")
-        parser_send.add_argument('-I', dest='incremental_snapshot_all', metavar='SNAPSHOT', help="Incremental send as a series snapshot")
+        parser_send.add_argument('-i', dest='incremental_snapshot', metavar='SNAPSHOT', help="Incremental send from snapshot")
         parser_send.add_argument('-p', dest='properties', action='store_true', help="Send dataset properties")
         parser_send.add_argument('zfs', metavar='ZFS', help="Source ZFS filesystem, with optional @snapshot")
 
