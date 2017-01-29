@@ -15,6 +15,7 @@
 from pvl.backup import __version__
 
 import argparse
+import contextlib
 import logging
 import os.path
 
@@ -22,6 +23,14 @@ import pvl.args
 import pvl.backup.zfs
 
 log = logging.getLogger('pvl.backup-ssh-command')
+
+@contextlib.contextmanager
+def wrap_context(value):
+    """
+        Dummy context manager that does nothing much.
+    """
+
+    yield value
 
 class Wrapper:
     """
@@ -33,49 +42,56 @@ class Wrapper:
         self.sudo = sudo
 
     def zfs_send(self, args):
-        log.info("zs send: %s", args)
+        target = args.zfs
 
-        if '@' in args.zfs:
-            zfs_name, snapshot_name = args.zfs.split('@', 1)
+        if '#' in target:
+            target, bookmark = target.split('#', 1)
         else:
-            zfs_name = args.zfs
-            snapshot_name = None
+            bookmark = None
+
+        if '@' in target:
+            zfs_name, snapshot_name = target.split('@', 1)
+        else:
+            zfs_name = target
+            snapshot_name = bookmark = None
 
         zfs = pvl.backup.zfs.open(zfs_name,
             noop    = self.noop,
             sudo    = self.sudo,
         )
         
-        if args.incremental_snapshot:
-            incremental_snapshot = zfs.snapshots[args.incremental_snapshot]
+        incremental_snapshot = incremental_bookmark = None
+
+        if not args.incremental_snapshot:
+            send_incremental = None
+        elif args.incremental_snapshot.startswith('#'):
+            send_incremental = incremental_bookmark = str(zfs) + args.incremental_snapshot
         else:
-            incremental_snapshot = None
+            send_incremental = incremental_snapshot = zfs.snapshots[args.incremental_snapshot]
     
         if snapshot_name is None: # zfs send tank/foo
             # send from temporary snapshot
-            with pvl.backup.zfs.snapshot(zfs, properties={'pvl-backup:send': incremental_snapshot}) as snapshot:
-                snapshot.send(
-                    incremental = incremental_snapshot,
-                    properties  = args.properties,
-                )
+            snapshot_context = pvl.backup.zfs.snapshot(zfs, properties={'pvl-backup:send': incremental_snapshot})
 
         elif snapshot_name: # zfs send tank/foo@xxx
             # send from given snapshot
-            snapshot = zfs.snapshots[snapshot_name]
-
-            snapshot.send(
-                incremental = incremental_snapshot,
-                properties  = args.properties,
-            )
+            snapshot_context = wrap_context(zfs.snapshots[snapshot_name])
 
         else: # zfs send tank/foo@
             # send from most recent snapshot
-            snapshot = zfs.last_snapshot()
-            
+            snapshot_context = wrap_context(zfs.last_snapshot())
+        
+        log.info("zfs send %s from incremental=%s to snapshot=@%s with bookmark=%s", zfs, send_incremental, snapshot_context, bookmark)
+   
+        with snapshot_context as snapshot:
             snapshot.send(
-                incremental = incremental_snapshot,
+                incremental = send_incremental,
                 properties  = args.properties,
             )
+ 
+            if bookmark:
+                # mookmark the send snapshot for next send
+                snapshot.bookmark(bookmark)
 
         return 0
 
