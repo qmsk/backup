@@ -178,6 +178,23 @@ class Filesystem (object):
 
             yield snapshot
 
+    def last_snapshot(self):
+        """
+            Return the most recent Snapshot.
+
+            Raises ZFSError if there are no snapshots.
+        """
+
+        snapshot = None
+
+        for snapshot in self.list_snapshots():
+            continue
+        
+        if snapshot:
+            return snapshot
+        else:
+            raise ZFSError("No snapshots")
+
     @property
     def snapshots(self):
         if not self._snapshots:
