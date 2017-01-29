@@ -236,8 +236,8 @@ class Filesystem (object):
 
             yield snapshot, tag.strip()
 
-    def bookmark(self, snapshot, bookmark):
-        self.zfs_write('bookmark', '{snapshot}@{filesystem}'.format(snapshot=snapshot, filesystem=self.name), bookmark)
+    def bookmark(self, snapshot_name, bookmark):
+        self.zfs_write('bookmark', '{snapshot}@{filesystem}'.format(snapshot=snapshot_name, filesystem=self.name), bookmark)
 
 class Snapshot (object):
     @classmethod
@@ -263,6 +263,9 @@ class Snapshot (object):
     # XXX: invalidate ZFS._snapshots cache
     def destroy (self):
         self.filesystem.zfs_write('destroy', self)
+
+    def bookmark(self, bookmark):
+        self.filesystem.zfs_write('bookmark', self, str(self.filesystem) + '#' + bookmark)
 
     def hold (self, tag):
         self.filesystem.zfs_write('hold', tag, self)
