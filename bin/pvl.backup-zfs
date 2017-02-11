@@ -299,7 +299,7 @@ def main (args):
             help="Pass rsync options")
 
     # ZFS send/recv
-    parser.add_argument('--zfs-source', metavar='[HOST:]ZFS',
+    parser.add_argument('--zfs-source', metavar='HOST:ZFS',
             help="ZFS send/recv from SSH remote or local pool")
     parser.add_argument('--zfs-bookmark', metavar='BOOKMARK-PREFIX', default=ZFS_BOOKMARK,
             help="Sender bookmark prefix")
