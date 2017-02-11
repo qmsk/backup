@@ -339,11 +339,11 @@ class Source:
             '-p' if properties else None, 
             '-i' + str(incremental) if incremental else None,
             '-I' + str(full_incremental) if full_incremental else None,
+            
+            name,
 
             # custom pvl.backup-ssh-command extensions
             bookmark = bookmark,
-
-            name,
         ))
 
 
