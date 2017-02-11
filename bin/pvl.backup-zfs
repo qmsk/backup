@@ -61,25 +61,16 @@ class ZFSTarget (BaseTarget):
     def __str__ (self):
         return str(self.zfs)
 
-    def create (self):
+    def create (self, source):
         """
             Create before first snapshot.
         """
 
-        log.debug("%s: create rsync_source=%s zfs_source=%s", self, self.rsync_source, self.zfs_source)
+        log.warning("%s: create with source=%s", self, source)
 
-        if self.rsync_source:
-            props = {'pvl-backup:source': verify_source}
-
-            log.warning("%s: create with %s", self, props)
-
-            self.zfs.create(props)
-
-        elif self.zfs_source:
-            log.warning("%s: will perform full send", self)
-
-        else:
-            raise Error("ZFS %s does not exist, and no source given" % (self, ))
+        self.zfs.create({
+            'pvl-backup:source': source,
+        })
 
     def setup (self, create=False, verify_source=None, force_source=False):
         """
@@ -99,7 +90,7 @@ class ZFSTarget (BaseTarget):
         if get_error:
             if create:
                 # assume error is caused by missing fs
-                self.create()
+                self.create(verify_source)
 
             else:
                 raise get_error
@@ -332,10 +323,17 @@ def main (args):
             return 1
 
         try:
+            if target.zfs_source:
+                source = str(target.zfs_source)
+            elif target.rsync_source:
+                source = str(target.rsync_source)
+            else:
+                source = None
+
             target.setup(
                     create          = args.setup_create,
-                    verify_source   = str(target.rsync_source),
-                    force_source    = str(target.rsync_source) if args.force_source else None,
+                    verify_source   = source,
+                    force_source    = source if args.force_source else None,
             )
  
             target.backup()
