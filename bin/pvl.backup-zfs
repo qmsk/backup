@@ -24,21 +24,6 @@ from pvl.backup.target import Error, Interval, BaseTarget
 
 log = logging.getLogger('pvl.backup-zfs')
 
-class ZFSSource:
-    """
-        Remote ZFS sender
-    """
-
-    @classmethod
-    def config(cls, source):
-        ssh_host, zfs_name = source.split(':', 1)
-
-        cls(host, zfs_name)
-
-    def __init__(self, ssh_host, zfs_name):
-        self.ssh_host = ssh_host
-        self.zfs_name = zfs_name
-
 class ZFSTarget (BaseTarget):
     """
         ZFS rsync snapshot management
@@ -49,10 +34,14 @@ class ZFSTarget (BaseTarget):
             noop        = None,
             zfs_source  = None,
             invoker_options = {},
+            ssh_options     = {},
             **opts
     ):
         if zfs_source:
-            zfs_source = ZFSSource.config(zfs_source)
+            zfs_source = pvl.backup.zfs.Source.config(zfs_source,
+                    invoker_options = invoker_options,
+                    ssh_options     = ssh_options,
+            )
 
         return super(ZFSTarget, cls).config(
                 zfs             = pvl.backup.zfs.Filesystem(name,
@@ -305,8 +294,12 @@ def main (args):
             help="Backup rsync source")
     parser.add_argument('--rsync-option', metavar='-option', action='append', dest='rsync_options', default=[],
             help="Pass rsync options")
-    parser.add_argument('--zfs-source', metavar='HOST:ZFS',
-            help="Backup from remote SSH ZFS sender")
+
+    # ZFS send/recv
+    parser.add_argument('--zfs-source', metavar='[HOST:]ZFS',
+            help="ZFS send/recv from SSH remote or local pool")
+    parser.add_argument('--ssh-config', metavar='PATH')
+    parser.add_argument('--ssh-identity', metavar='PATH')
 
     parser.add_argument('--interval', metavar=Interval.METAVAR, action='append', dest='intervals', type=Interval.config, default=[],
             help="Backup retention intervals")
@@ -326,6 +319,10 @@ def main (args):
                     zfs_source      = args.zfs_source,
                     invoker_options = dict(
                         sudo            = args.sudo,
+                    ),
+                    ssh_options     = dict(
+                        config_file     = args.ssh_config,
+                        identity_file   = args.ssh_identity,
                     ),
                     intervals       = args.intervals,
                     noop            = args.noop

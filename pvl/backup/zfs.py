@@ -297,3 +297,49 @@ class Snapshot (object):
             self,
             stdout=stdout,
         )
+
+class Source:
+    """
+        ZFS sender, either local or remote over SSH
+    """
+
+    @classmethod
+    def config(cls, source, invoker_options={}, ssh_options={}):
+        if ':' in source:
+            ssh_host, zfs_name = source.split(':', 1)
+
+            invoker = pvl.invoke.SSHInvoker(ssh_host, **ssh_options)
+        else:
+            zfs_name = source
+
+            invoker = pvl.invoke.Invoker(**invoker_options)
+
+        return cls(source, invoker, zfs_name)
+
+    def __init__(self, source, invoker: pvl.invoke.Invoker, zfs_name: str):
+        self.source = source
+        self.invoker = invoker
+        self.zfs_name = zfs_name
+
+    def __str__(self):
+        return self.source
+
+    def stream_send(self, incremental=None, full_incremental=None, properties=False, replication_stream=None, snapshot=None):
+        """
+            Returns a context manager.
+        """
+
+        name = self.zfs_name
+
+        if snapshot:
+            name += '@' + snapshot
+
+        return self.invoker.stream('zfs', pvl.invoke.optargs('send',
+            '-R' if replication_stream else None,
+            '-p' if properties else None, 
+            '-i' + str(incremental) if incremental else None,
+            '-I' + str(full_incremental) if full_incremental else None,
+            name,
+        ))
+
+
