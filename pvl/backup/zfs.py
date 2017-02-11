@@ -324,7 +324,7 @@ class Source:
     def __str__(self):
         return self.source
 
-    def stream_send(self, incremental=None, full_incremental=None, properties=False, replication_stream=None, snapshot=None):
+    def stream_send(self, incremental=None, full_incremental=None, properties=False, replication_stream=None, snapshot=None, bookmark=None):
         """
             Returns a context manager.
         """
@@ -339,6 +339,10 @@ class Source:
             '-p' if properties else None, 
             '-i' + str(incremental) if incremental else None,
             '-I' + str(full_incremental) if full_incremental else None,
+
+            # custom pvl.backup-ssh-command extensions
+            bookmark = bookmark,
+
             name,
         ))
 

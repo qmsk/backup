@@ -44,16 +44,11 @@ class Wrapper:
     def zfs_send(self, args):
         target = args.zfs
 
-        if '#' in target:
-            target, bookmark = target.split('#', 1)
-        else:
-            bookmark = None
-
         if '@' in target:
             zfs_name, snapshot_name = target.split('@', 1)
         else:
             zfs_name = target
-            snapshot_name = bookmark = None
+            snapshot_name = None
 
         zfs = pvl.backup.zfs.open(zfs_name,
             noop    = self.noop,
@@ -89,9 +84,9 @@ class Wrapper:
                 properties  = args.properties,
             )
  
-            if bookmark:
+            if args.bookmark:
                 # mookmark the send snapshot for next send
-                snapshot.bookmark(bookmark)
+                snapshot.bookmark(args.bookmark)
 
         return 0
 
@@ -103,6 +98,7 @@ class Wrapper:
         parser_send.add_argument('-i', dest='incremental_snapshot', metavar='SNAPSHOT', help="Incremental send from snapshot")
         parser_send.add_argument('-p', dest='properties', action='store_true', help="Send dataset properties")
         parser_send.add_argument('zfs', metavar='ZFS', help="Source ZFS filesystem, with optional @snapshot")
+        parser_send.add_argument('--bookmark', dest='bookmark', metavar='BOOKMARK', help="Bookmark snapshot after send")
 
         args = parser.parse_args(args)
 
