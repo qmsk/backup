@@ -33,7 +33,8 @@ class ZFSTarget (BaseTarget):
     @classmethod
     def config (cls, name,
             noop        = None,
-            zfs_source  = None,
+            zfs_source      = None,
+            zfs_bookmark    = None,
             invoker_options = {},
             ssh_options     = {},
             **opts
@@ -50,14 +51,16 @@ class ZFSTarget (BaseTarget):
                     invoker = pvl.invoke.Invoker(**invoker_options),
                 ),
                 zfs_source      = zfs_source,
+                zfs_bookmark    = zfs_bookmark,
                 **opts
         )
 
-    def __init__ (self, zfs, zfs_source=None, **opts):
+    def __init__ (self, zfs, zfs_source=None, zfs_bookmark=None, **opts):
         super(ZFSTarget, self).__init__(**opts)
 
         self.zfs = zfs
         self.zfs_source = zfs_source
+        self.zfs_bookmark = zfs_bookmark
 
     def __str__ (self):
         return str(self.zfs)
@@ -322,6 +325,7 @@ def main (args):
                     rsync_source    = args.rsync_source,
                     rsync_options   = args.rsync_options,
                     zfs_source      = args.zfs_source,
+                    zfs_bookmark    = args.zfs_bookmark,
                     invoker_options = dict(
                         sudo            = args.sudo,
                     ),
