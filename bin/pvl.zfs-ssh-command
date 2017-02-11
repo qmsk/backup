@@ -52,7 +52,7 @@ class Wrapper:
 
         zfs = pvl.backup.zfs.open(zfs_name,
             noop    = self.noop,
-            sudo    = self.sudo,
+            invoker = pvl.invoke.Invoker(sudo=self.sudo),
         )
         
         incremental_snapshot = incremental_bookmark = None
