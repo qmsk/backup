@@ -156,7 +156,7 @@ class ZFSTarget (BaseTarget):
                 log.warning("%s: requesting full send for local ZFS that is assumed to be missing: %s", self, error)
                 send_incremental = None
             else:
-                send_incremental = self.zfs_bookmark + ':' + local_snapshot
+                send_incremental = '#' + self.zfs_bookmark + ':' + local_snapshot
 
             # create bookmark
             send_bookmark = self.zfs_bookmark + ':' + snapshot_name
