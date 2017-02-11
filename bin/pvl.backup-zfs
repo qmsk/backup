@@ -48,13 +48,17 @@ class ZFSTarget (BaseTarget):
     def config (cls, name,
             noop        = None,
             zfs_source  = None,
+            invoker_options = {},
             **opts
     ):
         if zfs_source:
             zfs_source = ZFSSource.config(zfs_source)
 
         return super(ZFSTarget, cls).config(
-                zfs             = pvl.backup.zfs.Filesystem(name, noop=noop),
+                zfs             = pvl.backup.zfs.Filesystem(name,
+                    noop    = noop,
+                    invoker = pvl.invoke.Invoker(**invoker_options),
+                ),
                 zfs_source      = zfs_source,
                 **opts
         )
@@ -72,6 +76,8 @@ class ZFSTarget (BaseTarget):
         """
             Create before first snapshot.
         """
+
+        log.debug("%s: create rsync_source=%s zfs_source=%s", self, self.rsync_source, self.zfs_source)
 
         if self.rsync_source:
             props = {'pvl-backup:source': verify_source}
@@ -287,6 +293,8 @@ def main (args):
 
     parser.add_argument('-n', '--noop', action='store_true',
             help="No-op")
+    parser.add_argument('--sudo', action='store_true',
+            help="Run with sudo")
 
     parser.add_argument('--setup-create', action='store_true',
             help="Create new ZFS backup filesystem")
@@ -316,6 +324,9 @@ def main (args):
                     rsync_source    = args.rsync_source,
                     rsync_options   = args.rsync_options,
                     zfs_source      = args.zfs_source,
+                    invoker_options = dict(
+                        sudo            = args.sudo,
+                    ),
                     intervals       = args.intervals,
                     noop            = args.noop
             )

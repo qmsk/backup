@@ -25,9 +25,9 @@ class CommandError (Error):
 
     pass
 
-def zfs(*args, **opts):
+def zfs(*args, invoker=pvl.invoke.Invoker(), **opts):
     try:
-        stdout = pvl.invoke.invoke(ZFS, pvl.invoke.optargs(*args), **opts)
+        stdout = invoker.invoke(ZFS, pvl.invoke.optargs(*args), **opts)
     except pvl.invoke.InvokeError as error:
         if error.exit == 1:
             raise ZFSError(error.stderr)
@@ -75,10 +75,10 @@ class Filesystem (object):
         for name, in zfs('list', '-H', '-tfilesystem', '-oname'):
             yield cls(name)
 
-    def __init__(self, name, noop=None, sudo=None):
+    def __init__(self, name, noop=None, invoker=None):
         self.name = str(name)
         self.noop = noop
-        self.sudo = sudo
+        self.invoker = invoker
 
         # cache
         self._snapshots = None
@@ -86,16 +86,16 @@ class Filesystem (object):
     def __str__(self):
         return self.name
 
-    def zfs_read (self, *args):
+    def zfs_read (self, *args, **opts):
         """
             ZFS wrapper for sudo+noop
 
             Run read-only commands that are also executed when --noop.
         """
 
-        return zfs(*args, sudo=self.sudo)
+        return zfs(*args, invoker=self.invoker, **opts)
 
-    def zfs_write (self, *args):
+    def zfs_write (self, *args, **opts):
         """
             ZFS wrapper for sudo+noop
 
@@ -105,20 +105,8 @@ class Filesystem (object):
         if self.noop:
             return log.warning("noop: zfs %v", args)
         else:
-            return zfs(*args, sudo=self.sudo)
+            return zfs(*args, invoker=self.invoker, **opts)
 
-    def zfs_stream (self, *args, stdin=None, stdout=None):
-        """
-            ZFS wrapper for sudo+noop
-
-            Run commands that are not executed when --noop, and require stdin+stdout
-        """
-
-        if self.noop:
-            return log.warning("noop: zfs %v", args)
-        else:
-            return zfs(*args, sudo=self.sudo)
- 
     def check(self):
         """
             Raises ZFSError if unable to list the zfs filesystem.
@@ -245,9 +233,16 @@ class Filesystem (object):
         else:
             target = self
 
-        self.filesystem.zfs_stream('receive', target, stdin=stdin)
-
-        # XXX: return Snapshot..?
+        # TODO: parse -v output to determine the received snapshot name?
+        #   receiving full stream of test1/test@1 into test2/backup/test@1
+        #   received 42,5KB stream in 1 seconds (42,5KB/sec)
+        self.zfs_write('receive', target, stdin=stdin)
+        
+        if snapshot_name:
+            return Snapshot(self, snapshot_name)
+        else:
+            # XXX: parse received snapshot name, if needed?
+            pass
 
 class Snapshot (object):
     @classmethod
@@ -255,7 +250,7 @@ class Snapshot (object):
         filesystem, snapshot = name.split('@', 1)
 
         return cls(filesystem, snapshot, **opts)
-
+    
     def __init__ (self, filesystem, name, properties={}, noop=None, userrefs=None):
         self.filesystem = filesystem
         self.name = name
@@ -267,6 +262,7 @@ class Snapshot (object):
     def __str__ (self):
         return '{filesystem}@{name}'.format(name=self.name, filesystem=self.filesystem)
 
+    # TODO: default to properties=None to explode if not set?
     def __getitem__ (self, name):
         return self.properties[name]
 
@@ -295,7 +291,7 @@ class Snapshot (object):
             properties: bool                - send ZFS properties
         """
 
-        self.filesystem.zfs_stream('send', 
+        self.filesystem.zfs_read('send', 
             '-p' if properties else None, 
             '-i' + str(incremental) if incremental else None,
             self,
