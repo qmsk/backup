@@ -227,7 +227,7 @@ class Filesystem (object):
     def bookmark(self, snapshot_name, bookmark):
         self.zfs_write('bookmark', '{snapshot}@{filesystem}'.format(snapshot=snapshot_name, filesystem=self.name), bookmark)
 
-    def receive(self, snapshot_name=None, stdin=True):
+    def receive(self, snapshot_name=None, force=None, stdin=True):
         if snapshot_name:
             target = '{zfs}@{snapshot}'.format(zfs=self, snapshot=snapshot_name)
         else:
@@ -236,7 +236,7 @@ class Filesystem (object):
         # TODO: parse -v output to determine the received snapshot name?
         #   receiving full stream of test1/test@1 into test2/backup/test@1
         #   received 42,5KB stream in 1 seconds (42,5KB/sec)
-        self.zfs_write('receive', target, stdin=stdin)
+        self.zfs_write('receive', '-F' if force else None, target, stdin=stdin)
         
         if snapshot_name:
             return Snapshot(self, snapshot_name)
