@@ -6,9 +6,9 @@
     Testing:
         virtualenv opt && ./opt/bin/pip install -e
 
-        sudo SSH_ORIG_COMMAND='zfs send ...' ./opt/bin/pvl.backup-ssh-command
+        sudo SSH_ORIG_COMMAND='zfs send ...' ./opt/bin/pvl.zfs-ssh-command
 
-        ./opt/bin/pvl.backup-ssh-command -- zfs send ...
+        ./opt/bin/pvl.zfs-ssh-command -- zfs send ...
 
 """
 
