@@ -18,9 +18,9 @@ import argparse
 import contextlib
 import logging
 import os.path
-
 import pvl.args
 import pvl.backup.zfs
+import shlex
 
 log = logging.getLogger('pvl.backup-ssh-command')
 
