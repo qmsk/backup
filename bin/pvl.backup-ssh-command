@@ -68,13 +68,13 @@ class Wrapper:
             # send from temporary snapshot
             snapshot_context = pvl.backup.zfs.snapshot(zfs, properties={'pvl-backup:send': incremental_snapshot})
 
-        elif snapshot_name: # zfs send tank/foo@xxx
-            # send from given snapshot
-            snapshot_context = wrap_context(zfs.snapshots[snapshot_name])
-
-        else: # zfs send tank/foo@
+        elif snapshot_name == '*': # zfs send tank/foo@*
             # send from most recent snapshot
             snapshot_context = wrap_context(zfs.last_snapshot())
+
+        else: # zfs send tank/foo@xxx
+            # send from given snapshot
+            snapshot_context = wrap_context(zfs.snapshots[snapshot_name])
         
         log.info("zfs send %s from incremental=%s to snapshot=@%s with bookmark=%s", zfs, send_incremental, snapshot_context, bookmark)
    
