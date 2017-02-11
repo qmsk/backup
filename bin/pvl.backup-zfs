@@ -24,6 +24,21 @@ from pvl.backup.target import Error, Interval, BaseTarget
 
 log = logging.getLogger('pvl.backup-zfs')
 
+class ZFSSource:
+    """
+        Remote ZFS sender
+    """
+
+    @classmethod
+    def config(cls, source):
+        ssh_host, zfs_name = source.split(':', 1)
+
+        cls(host, zfs_name)
+
+    def __init__(self, ssh_host, zfs_name):
+        self.ssh_host = ssh_host
+        self.zfs_name = zfs_name
+
 class ZFSTarget (BaseTarget):
     """
         ZFS rsync snapshot management
@@ -32,20 +47,44 @@ class ZFSTarget (BaseTarget):
     @classmethod
     def config (cls, name,
             noop        = None,
+            zfs_source  = None,
             **opts
     ):
+        if zfs_source:
+            zfs_source = ZFSSource.config(zfs_source)
+
         return super(ZFSTarget, cls).config(
                 zfs             = pvl.backup.zfs.Filesystem(name, noop=noop),
+                zfs_source      = zfs_source,
                 **opts
         )
 
-    def __init__ (self, zfs, **opts):
+    def __init__ (self, zfs, zfs_source=None, **opts):
         super(ZFSTarget, self).__init__(**opts)
 
         self.zfs = zfs
+        self.zfs_source = zfs_source
 
     def __str__ (self):
         return str(self.zfs)
+
+    def create (self):
+        """
+            Create before first snapshot.
+        """
+
+        if self.rsync_source:
+            props = {'pvl-backup:source': verify_source}
+
+            log.warning("%s: create with %s", self, props)
+
+            self.zfs.create(props)
+
+        elif self.zfs_source:
+            log.warning("%s: will perform full send", self)
+
+        else:
+            raise Error("ZFS %s does not exist, and no source given" % (self, ))
 
     def setup (self, create=False, verify_source=None, force_source=False):
         """
@@ -64,12 +103,8 @@ class ZFSTarget (BaseTarget):
         
         if get_error:
             if create:
-                props = {'pvl-backup:source': verify_source}
-
                 # assume error is caused by missing fs
-                log.warning("%s: create volume with %s", self, props)
-
-                self.zfs.create(props)
+                self.create()
 
             else:
                 raise get_error
@@ -109,19 +144,38 @@ class ZFSTarget (BaseTarget):
         snapshot_name = now.strftime(self.SNAPSHOT_STRFTIME)
 
         if self.rsync_source:
-            # activate destination
+            # rsync to local ZFS destination, and then create snapshot
             dest_path = self.mount()
             
-            log.info("%s: rsync %s", self, dest_path)
+            log.info("%s: rsync %s@%s", self, dest_path, snapshot_name)
         
             rsync_stats = self.rsync(dest_path)
         
-        log.info("%s: snapshot %s", self, snapshot_name)
-                
-        return self.zfs.snapshot(snapshot_name, {
-            'pvl-backup:snapshot':  snapshot_name,
-            'pvl-backup:source':    str(self.rsync_source),
-        })
+            log.info("%s: snapshot %s", self, snapshot_name)
+                    
+            return self.zfs.snapshot(snapshot_name, {
+                'pvl-backup:snapshot':  snapshot_name,
+                'pvl-backup:source':    str(self.rsync_source),
+            })
+
+        elif self.zfs_source:
+            # zfs send-recv snapshot
+            try:
+                local_snapshot = self.zfs.last_snapshot()
+            except pvl.backup.zfs.ZFSError as error:
+                log.warning("%s: requesting full send for local ZFS: %s", error)
+                local_snapshot = None
+            
+            return self.zfs.receive(snapshot_name,
+                    stdin   = self.zfs_source.send(incremental=local_snapshot, properties=True, snapshot=None),
+            )
+
+        else:
+            # just snapshot local ZFS
+            return self.zfs.snapshot(snapshot_name, {
+                'pvl-backup:snapshot':  snapshot_name,
+                'pvl-backup:source':    None,
+            })
     
     def backup_interval (self, interval, now, snapshot):
         """
@@ -243,6 +297,8 @@ def main (args):
             help="Backup rsync source")
     parser.add_argument('--rsync-option', metavar='-option', action='append', dest='rsync_options', default=[],
             help="Pass rsync options")
+    parser.add_argument('--zfs-source', metavar='HOST:ZFS',
+            help="Backup from remote SSH ZFS sender")
 
     parser.add_argument('--interval', metavar=Interval.METAVAR, action='append', dest='intervals', type=Interval.config, default=[],
             help="Backup retention intervals")
@@ -259,6 +315,7 @@ def main (args):
             target = ZFSTarget.config(target,
                     rsync_source    = args.rsync_source,
                     rsync_options   = args.rsync_options,
+                    zfs_source      = args.zfs_source,
                     intervals       = args.intervals,
                     noop            = args.noop
             )

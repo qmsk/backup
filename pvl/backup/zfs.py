@@ -107,7 +107,7 @@ class Filesystem (object):
         else:
             return zfs(*args, sudo=self.sudo)
 
-    def zfs_stream (self, *args):
+    def zfs_stream (self, *args, stdin=None, stdout=None):
         """
             ZFS wrapper for sudo+noop
 
@@ -117,7 +117,7 @@ class Filesystem (object):
         if self.noop:
             return log.warning("noop: zfs %v", args)
         else:
-            return zfs(*args, stdin=True, stdout=True, sudo=self.sudo)
+            return zfs(*args, sudo=self.sudo)
  
     def check(self):
         """
@@ -239,6 +239,16 @@ class Filesystem (object):
     def bookmark(self, snapshot_name, bookmark):
         self.zfs_write('bookmark', '{snapshot}@{filesystem}'.format(snapshot=snapshot_name, filesystem=self.name), bookmark)
 
+    def receive(self, snapshot_name=None, stdin=True):
+        if snapshot_name:
+            target = '{zfs}@{snapshot}'.format(zfs=self, snapshot=snapshot_name)
+        else:
+            target = self
+
+        self.filesystem.zfs_stream('receive', target, stdin=stdin)
+
+        # XXX: return Snapshot..?
+
 class Snapshot (object):
     @classmethod
     def parse(cls, name, **opts):
@@ -277,9 +287,9 @@ class Snapshot (object):
     def release(self, tag):
         self.filesystem.zfs_write('release', tag, self)
 
-    def send(self, incremental=None, properties=False):
+    def send(self, incremental=None, properties=False, stdout=True):
         """
-            Write out ZFS contents up to this snapshot
+            Write out ZFS contents of this snapshot to stdout.
 
             incremental: Snapshot, None     - send incremental from given snapshot    
             properties: bool                - send ZFS properties
@@ -288,5 +298,6 @@ class Snapshot (object):
         self.filesystem.zfs_stream('send', 
             '-p' if properties else None, 
             '-i' + str(incremental) if incremental else None,
-            self
+            self,
+            stdout=stdout,
         )
