@@ -76,7 +76,7 @@ class Wrapper:
             # send from given snapshot
             snapshot_context = wrap_context(zfs.snapshots[snapshot_name])
         
-        log.info("zfs send %s from incremental=%s to snapshot=@%s with bookmark=%s", zfs, send_incremental, snapshot_context, bookmark)
+        log.info("zfs send %s from incremental=%s to snapshot=@%s with bookmark=%s", zfs, send_incremental, snapshot_context, args.bookmark)
    
         with snapshot_context as snapshot:
             snapshot.send(
