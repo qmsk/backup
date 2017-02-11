@@ -278,7 +278,7 @@ class ZFSTarget (BaseTarget):
         # destroy released snapshots
         self.purge_snapshots()
 
-ZFS_BOOKMARK = 'pvl-backup@' + socket.gethostname()
+ZFS_BOOKMARK = 'pvl-backup:' + socket.gethostname()
 
 def main (args):
     parser = pvl.args.parser(package='backup', module='zfs',
