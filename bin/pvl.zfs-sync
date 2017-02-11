@@ -1,0 +1,143 @@
+#!/usr/bin/python3
+
+"""
+    Replicate ZFS snapshots
+"""
+
+import logging
+import pvl.args
+import pvl.backup.zfs
+import pvl.invoke
+
+from pvl.backup import __version__
+
+log = logging.getLogger('pvl.backup-zfs')
+
+class Error (Exception):
+    pass
+
+class Target:
+    """
+        Sync local ZFS snapshots from remote source.
+    """
+
+    @classmethod
+    def config (cls, name,
+            noop        = None,
+            zfs_source  = None,
+            invoker_options = {},
+            ssh_options     = {},
+    ):
+        zfs_source = pvl.backup.zfs.Source.config(zfs_source,
+                invoker_options = invoker_options,
+                ssh_options     = ssh_options,
+        )
+
+        return cls(
+                zfs             = pvl.backup.zfs.Filesystem(name,
+                    noop    = noop,
+                    invoker = pvl.invoke.Invoker(**invoker_options),
+                ),
+                zfs_source      = zfs_source,
+        )
+
+    def __init__ (self, zfs, zfs_source=None):
+        self.zfs = zfs
+        self.zfs_source = zfs_source
+
+    def __str__ (self):
+        return str(self.zfs)
+
+    def setup (self, create=False):
+        """
+            Verify that the ZFS volume exists.
+        """
+                
+        get_error = None
+
+        try:
+            self.zfs.check()
+        except pvl.backup.zfs.Error as error:
+            if create:
+                log.debug("%s: setup check error: %s", self, get_error)
+            else:
+                raise Error("%s: target ZFS is missing, use --setup-create? %s" % (self, error))
+
+    def sync(self, force=None):
+        # the most recent local snapshot must still exist on the remote sender
+        try:
+            local_snapshot = self.zfs.last_snapshot().name
+        except pvl.backup.zfs.ZFSError as error:
+            log.warning("%s: requesting full send for local ZFS that is assumed to be missing: %s", self, error)
+            local_snapshot = None
+        
+        with self.zfs_source.stream_send(
+            replication_stream  = True,
+            full_incremental    = local_snapshot,
+        ) as stream:
+            # XXX: no returned snapshot when receiving
+            self.zfs.receive(force=force, stdin=stream)
+
+def main (args):
+    parser = pvl.args.parser(package='zfs', module='sync',
+            description = __doc__,
+            version     = __version__,
+    )
+
+    parser.add_argument('-n', '--noop', action='store_true',
+            help="No-op")
+    parser.add_argument('--sudo', action='store_true',
+            help="Run with sudo")
+
+    parser.add_argument('--setup-create', action='store_true',
+            help="Create new ZFS backup filesystem")
+
+    # ZFS send/recv
+    parser.add_argument('--zfs-source', metavar='HOST:ZFS',
+            help="ZFS send/recv from SSH remote or local pool")
+    parser.add_argument('--ssh-config', metavar='PATH')
+    parser.add_argument('--ssh-identity', metavar='PATH')
+
+    parser.add_argument('--force', action='store_true',
+            help="Rollback any local changes; purge old snapshots")
+
+    parser.add_argument('target', metavar='ZFS', nargs='+',
+            help="ZFS target")
+
+    args = pvl.args.parse(parser, args)
+
+    for target in args.target:
+        try:
+            target = Target.config(target,
+                    zfs_source      = args.zfs_source,
+                    invoker_options = dict(
+                        sudo            = args.sudo,
+                    ),
+                    ssh_options     = dict(
+                        config_file     = args.ssh_config,
+                        identity_file   = args.ssh_identity,
+                    ),
+                    noop            = args.noop
+            )
+        except (Error, pvl.backup.zfs.Error) as error:
+            log.error("%s: %s", target, error)
+            return 1
+
+        try:
+            target.setup(
+                    create          = args.setup_create,
+            )
+ 
+            target.sync(
+                    force           = args.force,
+            )
+
+        except (Error, pvl.backup.zfs.Error) as error:
+            log.error("%s: %s", target, error)
+            return 2
+
+    return 0
+    
+
+if __name__ == '__main__':
+    pvl.args.main(main)   
