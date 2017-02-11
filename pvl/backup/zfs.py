@@ -334,7 +334,7 @@ class Source:
         if snapshot:
             name += '@' + snapshot
 
-        return self.invoker.stream('zfs', pvl.invoke.optargs('send',
+        return self.invoker.stream('zfs', ['send'] + pvl.invoke.optargs(
             '-R' if replication_stream else None,
             '-p' if properties else None, 
             '-i' + str(incremental) if incremental else None,
