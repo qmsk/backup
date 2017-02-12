@@ -56,13 +56,14 @@ class Wrapper:
         )
         
         incremental_snapshot = incremental_bookmark = None
+        send_incremental = full_incremental = None
 
-        if not args.incremental_snapshot:
-            send_incremental = None
-        elif args.incremental_snapshot.startswith('#'):
+        if args.incremental_snapshot and args.incremental_snapshot.startswith('#'):
             send_incremental = incremental_bookmark = str(zfs) + args.incremental_snapshot
-        else:
+        elif args.incremental_snapshot:
             send_incremental = incremental_snapshot = zfs.snapshots[args.incremental_snapshot]
+        elif args.incremental_full:
+            full_incremental = incremental_snapshot = zfs.snapshots[args.incremental_full]
     
         if snapshot_name is None: # zfs send tank/foo
             # send from temporary snapshot
@@ -81,6 +82,7 @@ class Wrapper:
         with snapshot_context as snapshot:
             snapshot.send(
                 incremental         = send_incremental,
+                full_incremental    = full_incremental,
                 properties          = args.properties,
                 replication_stream  = args.replication,
             )
@@ -100,6 +102,7 @@ class Wrapper:
 
         parser_send = subparsers.add_parser('send')
         parser_send.add_argument('-i', dest='incremental_snapshot', metavar='SNAPSHOT', help="Incremental send from snapshot")
+        parser_send.add_argument('-I', dest='incremental_full', metavar='SNAPSHOT', help="Full incremental send of all snapshots from snapshot")
         parser_send.add_argument('-p', dest='properties', action='store_true', help="Send dataset properties")
         parser_send.add_argument('-R', dest='replication', action='store_true', help="Send replication stream")
         parser_send.add_argument('zfs', metavar='ZFS', help="Source ZFS filesystem, with optional @snapshot")
