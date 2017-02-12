@@ -226,6 +226,9 @@ class Filesystem (object):
 
     def bookmark(self, snapshot_name, bookmark):
         self.zfs_write('bookmark', '{snapshot}@{filesystem}'.format(snapshot=snapshot_name, filesystem=self.name), bookmark)
+    
+    def destroy_bookmark(self, bookmark):
+        self.zfs_write('destroy', '{filesystem}#{bookmark}'.format(filesystem=self.name, bookmark=bookmark))
 
     def receive(self, snapshot_name=None, force=None, stdin=True):
         if snapshot_name:
@@ -324,7 +327,7 @@ class Source:
     def __str__(self):
         return self.source
 
-    def stream_send(self, incremental=None, full_incremental=None, properties=False, replication_stream=None, snapshot=None, bookmark=None):
+    def stream_send(self, incremental=None, full_incremental=None, properties=False, replication_stream=None, snapshot=None, bookmark=None, purge_bookmark=None):
         """
             Returns a context manager.
         """
@@ -344,6 +347,7 @@ class Source:
 
             # custom pvl.backup-ssh-command extensions
             bookmark = bookmark,
+            purge_bookmark = purge_bookmark,
         ))
 
 

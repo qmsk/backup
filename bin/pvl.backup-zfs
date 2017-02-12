@@ -154,17 +154,18 @@ class ZFSTarget (BaseTarget):
                 local_snapshot = self.zfs.last_snapshot().name
             except pvl.backup.zfs.ZFSError as error:
                 log.warning("%s: requesting full send for local ZFS that is assumed to be missing: %s", self, error)
-                send_incremental = None
+                incremental_bookmark = None
             else:
-                send_incremental = '#' + self.zfs_bookmark + ':' + local_snapshot
+                incremental_bookmark = self.zfs_bookmark + ':' + local_snapshot
 
             # create bookmark
             send_bookmark = self.zfs_bookmark + ':' + snapshot_name
             
             with self.zfs_source.stream_send(
-                incremental = send_incremental,
-                snapshot    = None, # create temporary snapshot
-                bookmark    = send_bookmark,
+                incremental     = '#' + incremental_bookmark,
+                snapshot        = None, # create temporary snapshot
+                bookmark        = send_bookmark, # create bookmark for sent snapshot
+                purge_bookmark  = incremental_bookmark, # destroy bookmark for incremental snapshot
             ) as stream:
                 # create new snapshot with desired name
                 return self.zfs.receive(snapshot_name, force=True, stdin=stream)
