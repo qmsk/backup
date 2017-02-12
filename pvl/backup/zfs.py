@@ -103,7 +103,7 @@ class Filesystem (object):
         """
 
         if self.noop:
-            return log.warning("noop: zfs %v", args)
+            return log.warning("noop: zfs %s", args)
         else:
             return zfs(*args, invoker=self.invoker, **opts)
 
