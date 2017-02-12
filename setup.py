@@ -21,7 +21,7 @@ setup(
     ],
 
     install_requires = [
-        'pvl-common>=1.0.0, <1.1'
+        'pvl-common>=1.1, <1.2'
     ],
  
     # binaries
