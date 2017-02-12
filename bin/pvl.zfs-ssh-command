@@ -80,8 +80,9 @@ class Wrapper:
    
         with snapshot_context as snapshot:
             snapshot.send(
-                incremental = send_incremental,
-                properties  = args.properties,
+                incremental         = send_incremental,
+                properties          = args.properties,
+                replication_stream  = args.replication,
             )
  
             if args.bookmark:
@@ -100,6 +101,7 @@ class Wrapper:
         parser_send = subparsers.add_parser('send')
         parser_send.add_argument('-i', dest='incremental_snapshot', metavar='SNAPSHOT', help="Incremental send from snapshot")
         parser_send.add_argument('-p', dest='properties', action='store_true', help="Send dataset properties")
+        parser_send.add_argument('-R', dest='replication', action='store_true', help="Send replication stream")
         parser_send.add_argument('zfs', metavar='ZFS', help="Source ZFS filesystem, with optional @snapshot")
         parser_send.add_argument('--bookmark', metavar='BOOKMARK', help="Bookmark snapshot after send")
         parser_send.add_argument('--purge-bookmark', metavar='BOOKMARK', help="Destroy bookmark after snapshot send")
