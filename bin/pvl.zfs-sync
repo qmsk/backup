@@ -98,8 +98,8 @@ def main (args):
     parser.add_argument('--ssh-config', metavar='PATH')
     parser.add_argument('--ssh-identity', metavar='PATH')
 
-    parser.add_argument('--force', action='store_true',
-            help="Rollback any local changes; purge old snapshots")
+    parser.add_argument('--purge', action='store_true',
+            help="Purge old snapshots; also rollback any local changes")
 
     parser.add_argument('target', metavar='ZFS', nargs='+',
             help="ZFS target")
@@ -129,7 +129,7 @@ def main (args):
             )
  
             target.sync(
-                    force           = args.force,
+                    force           = args.purge,
             )
 
         except (Error, pvl.backup.zfs.Error) as error:
