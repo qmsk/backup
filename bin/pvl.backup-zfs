@@ -162,7 +162,7 @@ class ZFSTarget (BaseTarget):
             send_bookmark = self.zfs_bookmark + ':' + snapshot_name
             
             with self.zfs_source.stream_send(
-                incremental     = '#' + incremental_bookmark,
+                incremental     = '#' + incremental_bookmark if incremental_bookmark else None,
                 snapshot        = None, # create temporary snapshot
                 bookmark        = send_bookmark, # create bookmark for sent snapshot
                 purge_bookmark  = incremental_bookmark, # destroy bookmark for incremental snapshot

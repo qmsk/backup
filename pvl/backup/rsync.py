@@ -280,17 +280,15 @@ class ZFSSource(Source):
         Backup ZFS by snapshotting + mounting it.
     """
 
-    def __init__ (self, zfs, path='/', sudo=None):
+    def __init__ (self, zfs, path='/', **opts):
         """
             zfs             - pvl.backup.zfs.ZFS
             path            - str: filesystem path within lvm volume; no leading /
-
-            sudo            - use sudo for LVM operations
         """
+
+        super().__init__(path.lstrip('/'), **opts)
         
         self.zfs = zfs
-        self.path = path.lstrip('/')
-        self.sudo = sudo
     
     def snapshot(self):
         """
@@ -521,7 +519,7 @@ def parse_source (path, restrict_paths=None, allow_remote=True, sudo=None, lvm_o
         log.debug("ZFS %s: %s / %s", path, device, name)
 
         # open
-        return ZFSSource(pvl.backup.zfs.open(device, sudo=sudo),
+        return ZFSSource(pvl.backup.zfs.open(device, invoker=pvl.invoke.Invoker(sudo=sudo)),
                 path    = name,
                 sudo    = sudo,
         )
