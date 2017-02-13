@@ -76,6 +76,7 @@ class Target:
         with self.zfs_source.stream_send(
             replication_stream  = True,
             full_incremental    = local_snapshot,
+            snapshot            = '*', # newest
         ) as stream:
             # XXX: no returned snapshot when receiving
             self.zfs.receive(force=force, stdin=stream)
