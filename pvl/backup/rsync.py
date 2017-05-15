@@ -106,6 +106,11 @@ def format_percentage(num, total):
     else:
         return " "
 
+def read_stats(row, *names):
+    for name in names:
+        if name in row:
+            return row[name]
+
 def print_stats(rows):
     """
         Output stats from iterable of (name, duration, stats).
@@ -127,12 +132,14 @@ def print_stats(rows):
     ))
 
     for name, duration, stats in rows:
+        files = read_stats(stats, "Number of regular files transferred", "Number of files transferred")
+
         print(ROW.format(
             name        = name,
             time        = format_units(duration.total_seconds()),
-            files       = format_units(stats["Number of files transferred"]),
+            files       = format_units(files),
             files_total = format_units(stats["Number of files"]),
-            files_pct   = format_percentage(stats["Number of files transferred"], stats["Number of files"]),
+            files_pct   = format_percentage(files, stats["Number of files"]),
             size        = format_units(stats["Total transferred file size"]),
             size_total  = format_units(stats["Total file size"]),
             size_pct    = format_percentage(stats["Total transferred file size"], stats["Total file size"]),
