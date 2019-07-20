@@ -269,6 +269,22 @@ class Snapshot (object):
     def __getitem__ (self, name):
         return self.properties[name]
 
+    def get(self, property_name):
+        """
+            Get property value.
+
+            Returns None if the property does not exist or is not set.
+        """
+
+        for fs, property_name, value, source in self.zfs_read('get', '-H', property_name, self.name):
+            if value == '-' and source == '-':
+                return None
+            else:
+                return value
+
+    def set(self, property, value):
+        self.zfs_write('set', '{property}={value}'.format(property=property, value=value), self.name)
+
     # XXX: invalidate ZFS._snapshots cache
     def destroy (self):
         self.filesystem.zfs_write('destroy', self)
