@@ -316,6 +316,8 @@ def main (args):
     parser.add_argument('--ssh-config', metavar='PATH')
     parser.add_argument('--ssh-identity', metavar='PATH')
 
+    parser.add_argument('--skip-backup', action='store_true',
+            help="Skip backup snapshot, just purge")
     parser.add_argument('--interval', metavar=Interval.METAVAR, action='append', dest='intervals', type=Interval.config, default=[],
             help="Backup retention intervals")
     parser.add_argument('--purge', action='store_true',
@@ -362,8 +364,9 @@ def main (args):
                     verify_source   = source,
                     force_source    = source if args.force_source else None,
             )
- 
-            target.backup()
+
+	    if not args.skip_backup:
+                target.backup()
 
             # purge intervals
             if args.purge:
