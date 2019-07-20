@@ -276,14 +276,14 @@ class Snapshot (object):
             Returns None if the property does not exist or is not set.
         """
 
-        for fs, property_name, value, source in self.zfs_read('get', '-H', property_name, self.name):
+        for fs, property_name, value, source in self.filesystem.zfs_read('get', '-H', property_name, str(self)):
             if value == '-' and source == '-':
                 return None
             else:
                 return value
 
     def set(self, property, value):
-        self.zfs_write('set', '{property}={value}'.format(property=property, value=value), self.name)
+        self.filesystem.zfs_write('set', '{property}={value}'.format(property=property, value=value), str(self))
 
     # XXX: invalidate ZFS._snapshots cache
     def destroy (self):
