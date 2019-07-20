@@ -168,7 +168,13 @@ class ZFSTarget (BaseTarget):
                 purge_bookmark  = incremental_bookmark, # destroy bookmark for incremental snapshot
             ) as stream:
                 # create new snapshot with desired name
-                return self.zfs.receive(snapshot_name, force=True, stdin=stream)
+                snapshot = self.zfs.receive(snapshot_name, force=True, stdin=stream)
+
+            # set properties
+            snapshot.set('pvl-backup:snapshot', snapshot_name)
+            snapshot.set('pvl-backup:source', str(self.zfs_source))
+
+            return snapshot
 
         else:
             # just snapshot local ZFS
