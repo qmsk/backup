@@ -365,7 +365,7 @@ def main (args):
                     force_source    = source if args.force_source else None,
             )
 
-	    if not args.skip_backup:
+            if not args.skip_backup:
                 target.backup()
 
             # purge intervals
