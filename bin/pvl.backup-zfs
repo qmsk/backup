@@ -238,14 +238,14 @@ class ZFSTarget (BaseTarget):
             
             snapshot.release(hold)
 
-    def purge_snapshots(self):
+    def purge_snapshots(self, other=None):
         """
             Purge any un-held snapshots
         """
 
         for snapshot in self.zfs.list_snapshots('pvl-backup:snapshot'):
-            if not snapshot['pvl-backup:snapshot']:
-                log.debug("%s: skip %s: not a snapshot", self, snapshot)
+            if (not other) and (not snapshot['pvl-backup:snapshot']):
+                log.debug("%s: skip %s: not a pvl-backup snapshot", self, snapshot)
                 continue
             
             if snapshot.userrefs > 0:
@@ -256,9 +256,9 @@ class ZFSTarget (BaseTarget):
 
             snapshot.destroy()
 
-    def purge(self):
+    def purge(self, other_snapshots=None):
         """
-            Purge any extra snapshots
+            Unhold snapshots per interval limits, and destroy un-referenced snapshots.
         """
         
         # collect { Interval.name: [(Snapshot, hold_tag)] }
@@ -283,7 +283,7 @@ class ZFSTarget (BaseTarget):
                 self.purge_interval(interval, snapshots)
         
         # destroy released snapshots
-        self.purge_snapshots()
+        self.purge_snapshots(other=other_snapshots)
 
 ZFS_BOOKMARK = 'pvl-backup:' + socket.gethostname()
 
@@ -320,6 +320,8 @@ def main (args):
             help="Backup retention intervals")
     parser.add_argument('--purge', action='store_true',
             help="Purge old snapshots")
+    parser.add_argument('--purge-other-snapshots', action='store_true',
+            help="Also purge other snapshots without pvl-backup:* properties")
 
     parser.add_argument('target', metavar='ZFS', nargs='+',
             help="ZFS target")
@@ -365,7 +367,7 @@ def main (args):
 
             # purge intervals
             if args.purge:
-                target.purge()
+                target.purge(other_snapshots=args.purge_other_snapshots)
 
         except (Error, pvl.backup.zfs.Error) as error:
             log.exception("%s: %s", target, error)
