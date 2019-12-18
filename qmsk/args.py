@@ -8,9 +8,9 @@ import os.path
 import shlex
 import sys
 
-import logging; log = logging.getLogger('pvl.args')
+import logging; log = logging.getLogger('qmsk.args')
 
-CONFDIR = '/etc/pvl'
+CONFDIR = '/etc/qmsk'
 
 def parser (package=None, module=None, version=None, **opts):
     """
@@ -23,7 +23,7 @@ def parser (package=None, module=None, version=None, **opts):
     )
     parser.convert_arg_line_to_args = lambda line: shlex.split(line, comments=True)
 
-    general = parser.add_argument_group('pvl.args', "General options")
+    general = parser.add_argument_group('qmsk.args', "General options")
 
     general.add_argument('-q', '--quiet',     dest='loglevel', action='store_const', const=logging.ERROR, help="Less output")
     general.add_argument('-v', '--verbose',   dest='loglevel', action='store_const', const=logging.INFO,  help="More output")

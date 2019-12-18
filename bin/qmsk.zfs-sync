@@ -5,13 +5,13 @@
 """
 
 import logging
-import pvl.args
-import pvl.backup.zfs
-import pvl.invoke
+import qmsk.args
+import qmsk.backup.zfs
+import qmsk.invoke
 
-from pvl.backup import __version__
+from qmsk.backup import __version__
 
-log = logging.getLogger('pvl.backup-zfs')
+log = logging.getLogger('qmsk.backup-zfs')
 
 class Error (Exception):
     pass
@@ -28,15 +28,15 @@ class Target:
             invoker_options = {},
             ssh_options     = {},
     ):
-        zfs_source = pvl.backup.zfs.Source.config(zfs_source,
+        zfs_source = qmsk.backup.zfs.Source.config(zfs_source,
                 invoker_options = invoker_options,
                 ssh_options     = ssh_options,
         )
 
         return cls(
-                zfs             = pvl.backup.zfs.Filesystem(name,
+                zfs             = qmsk.backup.zfs.Filesystem(name,
                     noop    = noop,
-                    invoker = pvl.invoke.Invoker(**invoker_options),
+                    invoker = qmsk.invoke.Invoker(**invoker_options),
                 ),
                 zfs_source      = zfs_source,
         )
@@ -57,7 +57,7 @@ class Target:
 
         try:
             self.zfs.check()
-        except pvl.backup.zfs.Error as error:
+        except qmsk.backup.zfs.Error as error:
             if create:
                 log.debug("%s: setup check error: %s", self, get_error)
             else:
@@ -67,7 +67,7 @@ class Target:
         # the most recent local snapshot must still exist on the remote sender
         try:
             local_snapshot = self.zfs.last_snapshot().name
-        except pvl.backup.zfs.ZFSError as error:
+        except qmsk.backup.zfs.ZFSError as error:
             log.warning("%s: full send fom %s with missing local snapshot: %s", self, self.zfs_source, error)
             local_snapshot = None
         else:
@@ -82,7 +82,7 @@ class Target:
             self.zfs.receive(force=force, stdin=stream)
 
 def main (args):
-    parser = pvl.args.parser(package='zfs', module='sync',
+    parser = qmsk.args.parser(package='zfs', module='sync',
             description = __doc__,
             version     = __version__,
     )
@@ -107,7 +107,7 @@ def main (args):
     parser.add_argument('target', metavar='ZFS', nargs='+',
             help="ZFS target")
 
-    args = pvl.args.parse(parser, args)
+    args = qmsk.args.parse(parser, args)
 
     for target in args.target:
         try:
@@ -122,7 +122,7 @@ def main (args):
                     ),
                     noop            = args.noop
             )
-        except (Error, pvl.backup.zfs.Error) as error:
+        except (Error, qmsk.backup.zfs.Error) as error:
             log.error("%s: %s", target, error)
             return 1
 
@@ -135,7 +135,7 @@ def main (args):
                     force           = args.purge,
             )
 
-        except (Error, pvl.backup.zfs.Error) as error:
+        except (Error, qmsk.backup.zfs.Error) as error:
             log.error("%s: %s", target, error)
             return 2
 
@@ -143,4 +143,4 @@ def main (args):
     
 
 if __name__ == '__main__':
-    pvl.args.main(main)   
+    qmsk.args.main(main)   

@@ -9,7 +9,7 @@ import logging
 import os
 import subprocess
 
-log = logging.getLogger('pvl.invoke')
+log = logging.getLogger('qmsk.invoke')
 
 SUDO = '/usr/bin/sudo'
 ENCODING = 'utf-8'

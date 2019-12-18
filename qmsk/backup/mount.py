@@ -2,14 +2,14 @@
     Mount filesystems.
 """
 
-from pvl.invoke import invoke, optargs, command
+from qmsk.invoke import invoke, optargs, command
 
 import contextlib
 import os, os.path
 import logging
 import tempfile
 
-log = logging.getLogger('pvl.backup.mount')
+log = logging.getLogger('qmsk.backup.mount')
 
 
 class MountError (Exception) :

@@ -8,14 +8,14 @@ import contextlib
 import datetime
 import logging
 import os.path
-import pvl.backup.mount
-import pvl.invoke
+import qmsk.backup.mount
+import qmsk.invoke
 import re
 
-from pvl.backup.lvm import LVM, LVMVolume, LVMSnapshot
-from pvl.backup import zfs
+from qmsk.backup.lvm import LVM, LVMVolume, LVMSnapshot
+from qmsk.backup import zfs
 
-log = logging.getLogger('pvl.backup.rsync')
+log = logging.getLogger('qmsk.backup.rsync')
 
 RSYNC = '/usr/bin/rsync'
 
@@ -62,7 +62,7 @@ def parse_stats (stdout):
         ('Total bytes sent', 65)
         ('Total bytes received', 19)
     """
-    
+
     for line in stdout:
         match = STATS_REGEX.match(line)
 
@@ -97,7 +97,7 @@ def format_units(value):
     for quant, unit in FORMAT_UNITS:
         if value > quant:
             return "{:3.2f}{:}".format(value / quant, unit)
-    
+
     return "{:3.2f} ".format(value)
 
 def format_percentage(num, total):
@@ -153,12 +153,12 @@ def rsync (options, paths, sudo=False):
 
         Returns a stats dict if there is any valid --stats output, None otherwise.
 
-        Raises pvl.invoke.InvokeError
+        Raises qmsk.invoke.InvokeError
     """
 
     log.info("rsync %s %s", ' '.join(options), ' '.join(paths))
 
-    stdout = pvl.invoke.invoke(RSYNC, options + paths, sudo=sudo)
+    stdout = qmsk.invoke.invoke(RSYNC, options + paths, sudo=sudo)
 
     try:
         stats = dict(parse_stats(stdout))
@@ -173,13 +173,13 @@ def rsync_server (options, paths, sudo=False):
     """
         Run rsync in --server mode, passing through stdin/out.
 
-        Raises pvl.invoke.InvokeError
+        Raises qmsk.invoke.InvokeError
     """
 
     log.info("rsync-server %s %s", ' '.join(options), ' '.join(paths))
 
     # invoke directly; no option-handling, nor stdin/out redirection
-    pvl.invoke.invoke(RSYNC, options + paths, stdin=True, stdout=True, sudo=sudo)
+    qmsk.invoke.invoke(RSYNC, options + paths, stdin=True, stdout=True, sudo=sudo)
 
 class Error (Exception):
     pass
@@ -227,13 +227,13 @@ class Source (object):
         """
             Run with the given destination, returning optional stats dict.
         """
-        
+
         with self.mount() as path:
             return rsync(options, [path, dest], sudo=self.sudo)
 
     def __str__ (self):
         return self.path
- 
+
 class LVMSource(Source):
     """
         Backup LVM LV by snapshotting + mounting it.
@@ -248,20 +248,20 @@ class LVMSource(Source):
             sudo            - use sudo for LVM operations
             lvm_opts   - options for LVM.snapshot
         """
-        
+
         self.path = path.lstrip('/')
         self.sudo = sudo
 
         self.lvm = LVM(vg, sudo=sudo)
         self.lvm_volume = self.lvm.volume(lv)
         self.lvm_opts = lvm_opts
- 
+
     @contextlib.contextmanager
     def mount (self):
         """
             Mount LVM snapshot of volume
         """
-        
+
         # snapshot
         log.info("Creating LVM snapshot: %s", self.lvm_volume)
 
@@ -272,13 +272,13 @@ class LVMSource(Source):
             # mount
             log.info("Mounting LVM snapshot: %s", snapshot)
 
-            with pvl.backup.mount.mount(snapshot.dev_path,
+            with qmsk.backup.mount.mount(snapshot.dev_path,
                     name_hint   = 'lvm_' + snapshot.name + '_',
                     readonly    = True,
                     sudo        = self.sudo,
             ) as mountpoint:
                 yield mountpoint.path + '/' + self.path
- 
+
     def __str__ (self):
         return 'lvm:{volume}'.format(volume=self.lvm_volume)
 
@@ -289,14 +289,14 @@ class ZFSSource(Source):
 
     def __init__ (self, zfs, path='/', **opts):
         """
-            zfs             - pvl.backup.zfs.ZFS
+            zfs             - qmsk.backup.zfs.ZFS
             path            - str: filesystem path within lvm volume; no leading /
         """
 
         super().__init__(path.lstrip('/'), **opts)
-        
+
         self.zfs = zfs
-    
+
     def snapshot(self):
         """
             With ZFS snapshot.
@@ -304,8 +304,8 @@ class ZFSSource(Source):
 
         log.info("Creating ZFS snapshot: %s", self.zfs)
 
-        return pvl.backup.zfs.snapshot(self.zfs, properties={
-            'pvl-backup:source': self.path,
+        return qmsk.backup.zfs.snapshot(self.zfs, properties={
+            'qmsk-backup:source': self.path,
         })
 
     @contextlib.contextmanager
@@ -318,23 +318,23 @@ class ZFSSource(Source):
             # mount
             log.info("Mounting ZFS snapshot: %s", snapshot)
 
-            with pvl.backup.mount.mount(str(snapshot),
+            with qmsk.backup.mount.mount(str(snapshot),
                     fstype      = 'zfs',
                     name_hint   = 'zfs_' + str(self.zfs).replace('/', '_') + '_',
                     readonly    = True,
                     sudo        = self.sudo,
             ) as mountpoint:
                 yield mountpoint.path + '/' + self.path
- 
+
     def __str__ (self):
         return 'zfs:{zfs}'.format(zfs=self.zfs)
- 
+
 def parse_command (command):
     """
-        Parse rsync server command into bits. 
+        Parse rsync server command into bits.
 
             command:            - list(argv) including 'rsync' command and options/arguments
-        
+
         Returns:
             cmd:        rsync argv[0]
             options:    list of --options and -opts
@@ -342,7 +342,7 @@ def parse_command (command):
 
         Raises:
             CommandError
-        
+
         >>> import shlex
         >>> parse_command(shlex.split('rsync --server --sender -ax . lvm:asdf:test'))
         ('rsync', ['--server', '--sender', '-ax'], ['.', 'lvm:asdf:test'])
@@ -360,11 +360,11 @@ def parse_command (command):
 
         elif part.startswith('--'):
             options.append(part)
-        
+
         elif part.startswith('-'):
             # XXX: parse out individual flags..?
             options.append(part)
-        
+
         else:
             paths.append(part)
 
@@ -378,10 +378,10 @@ def parse_server_command(command):
             options:    list of --options and -opts from parse_options
             source:     source path if sender, or None
             dest:       dest path if receiver, or None
-        
+
         Raises:
             CommandError
-        
+
     """
 
     cmd, options, args = parse_command(command)
@@ -391,7 +391,7 @@ def parse_server_command(command):
 
     if len(args) != 2:
         raise CommandError("Invalid source/destination paths")
-    
+
     if args[0] != '.':
         raise CommandError("Invalid source-path for server")
 
@@ -405,7 +405,7 @@ def parse_server_command(command):
         # write
         source = None
         dest = path
-        
+
     else:
         # read
         source = path
@@ -413,7 +413,7 @@ def parse_server_command(command):
 
     # ok
     return options, source, dest
-    
+
 def parse_sender_command (command):
     """
         Parse rsync's internal --server --sender command used when reading over SSH.
@@ -421,12 +421,12 @@ def parse_sender_command (command):
         Returns:
             options:    list of --options and -opts from parse_options
             source:     source path
-        
+
         Raises:
             CommandError
-        
+
     """
-    
+
     options, source, dest = parse_server_command(command)
 
     if dest:
@@ -437,7 +437,7 @@ def parse_sender_command (command):
 def parse_source (path, restrict_paths=None, allow_remote=True, sudo=None, lvm_opts={}):
     """
         Parse an LVM source path, supporting custom extensions for LVM support.
-            
+
             restrict_paths  - raise CommandError if source path is not under any of the given sources.
             allow_remote    - allow remote sources?
             lvm_opts        - **opts for LVMSource
@@ -447,7 +447,7 @@ def parse_source (path, restrict_paths=None, allow_remote=True, sudo=None, lvm_o
         raise SourceError("No path given")
 
     endslash = path.endswith('/')
-        
+
     # normalize
     path = os.path.normpath(path)
 
@@ -472,10 +472,10 @@ def parse_source (path, restrict_paths=None, allow_remote=True, sudo=None, lvm_o
         return Source(path,
                 sudo    = sudo,
         )
-    
+
     elif path.startswith('lvm:'):
         _, path = path.split(':', 1)
-    
+
         # LVM VG
         try:
             if ':' in path:
@@ -498,7 +498,7 @@ def parse_source (path, restrict_paths=None, allow_remote=True, sudo=None, lvm_o
         else:
             lv = path
             path = ''
-       
+
         # lookup
         log.debug("LVM: %s/%s/%s", vg, lv, path)
 
@@ -512,7 +512,7 @@ def parse_source (path, restrict_paths=None, allow_remote=True, sudo=None, lvm_o
         _, path = path.split(':', 1)
 
         if path.startswith('/'):
-            device, mount, fstype, name = pvl.backup.mount.find(path)
+            device, mount, fstype, name = qmsk.backup.mount.find(path)
 
             log.debug("%s: mount=%s fstype=%s device=%s name=%s", path, mount, fstype, device, name)
 
@@ -526,11 +526,11 @@ def parse_source (path, restrict_paths=None, allow_remote=True, sudo=None, lvm_o
         log.debug("ZFS %s: %s / %s", path, device, name)
 
         # open
-        return ZFSSource(pvl.backup.zfs.open(device, invoker=pvl.invoke.Invoker(sudo=sudo)),
+        return ZFSSource(qmsk.backup.zfs.open(device, invoker=qmsk.invoke.Invoker(sudo=sudo)),
                 path    = name,
                 sudo    = sudo,
         )
-        
+
     elif ':' in path: # remote host
         if not allow_remote:
             raise SourceError("Invalid remote path")
@@ -544,4 +544,3 @@ def parse_source (path, restrict_paths=None, allow_remote=True, sudo=None, lvm_o
     else:
         # invalid
         raise SourceError("Unknown path format")
-

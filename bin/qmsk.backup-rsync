@@ -6,22 +6,22 @@
     Testing:
         virtualenv opt && ./opt/bin/pip install -e
 
-        sudo SSH_ORIG_COMMAND='rsync --server --sender -ax . lvm:asdf:test' ./opt/bin/pvl.backup-rsync -v
+        sudo SSH_ORIG_COMMAND='rsync --server --sender -ax . lvm:asdf:test' ./opt/bin/qmsk.backup-rsync -v
 
-        sudo rsync -e './opt/bin/pvl.backup-rsync --debug --' -ax testing:lvm:asdf:test test/tmp"
+        sudo rsync -e './opt/bin/qmsk.backup-rsync --debug --' -ax testing:lvm:asdf:test test/tmp"
 """
 
 import logging
 import os
-import pvl.args
-import pvl.backup.rsync
-import pvl.invoke
+import qmsk.args
+import qmsk.backup.rsync
+import qmsk.invoke
 import shlex
 
-from pvl.backup import __version__
-from pvl.backup import lvm
+from qmsk.backup import __version__
+from qmsk.backup import lvm
 
-log = logging.getLogger('pvl.backup-rsync')
+log = logging.getLogger('qmsk.backup-rsync')
 
 def rsync_wrapper (args, command, server=False):
     """
@@ -35,14 +35,14 @@ def rsync_wrapper (args, command, server=False):
 
     # parse --sender command
     try :
-        rsync_options, source_path = pvl.backup.rsync.parse_sender_command(command)
-    except pvl.backup.rsync.CommandError as error:
+        rsync_options, source_path = qmsk.backup.rsync.parse_sender_command(command)
+    except qmsk.backup.rsync.CommandError as error:
         log.error("Invalid rsync command %r: %s", command, error)
         return 2
     
     # parse source path
     try :
-        rsync_source = pvl.backup.rsync.parse_source(source_path,
+        rsync_source = qmsk.backup.rsync.parse_source(source_path,
                 restrict_paths      = args.restrict_path,
                 allow_remote        = args.allow_remote,
                 sudo                = args.sudo,
@@ -53,7 +53,7 @@ def rsync_wrapper (args, command, server=False):
                 ),
             )
 
-    except pvl.backup.rsync.SourceError as error:
+    except qmsk.backup.rsync.SourceError as error:
         log.error("Invalid rsync source: %r: %s", source_path, error)
         return 2
 
@@ -67,7 +67,7 @@ def rsync_wrapper (args, command, server=False):
         # run rsync within the source (may perform additional stuff like snapshot...)
         rsync_source.rsync_sender(rsync_options)
 
-    except pvl.invoke.InvokeError as error:
+    except qmsk.invoke.InvokeError as error:
         log.error("rsync failed: %s", error)
         return error.exit
     
@@ -82,7 +82,7 @@ def main (args):
         Run, with full argv
     """
 
-    parser = pvl.args.parser(package='backup', module='rsync',
+    parser = qmsk.args.parser(package='backup', module='rsync',
             description = __doc__,
             version     = __version__,
     )
@@ -125,9 +125,9 @@ def main (args):
     )
 
     # parse
-    args = pvl.args.parse(parser, args)
+    args = qmsk.args.parse(parser, args)
     
-    # from args (as given by `rsync -e pvl.backup-rsync`) -> 'pvl.backup-rsync <host> (<command> ...)'
+    # from args (as given by `rsync -e qmsk.backup-rsync`) -> 'qmsk.backup-rsync <host> (<command> ...)'
     if args.ssh_command:
         # from ssh authorized_keys command="..."
         command_parts = shlex.split(args.ssh_command)
@@ -151,4 +151,4 @@ def main (args):
         return 3
 
 if __name__ == '__main__':
-    pvl.args.main(main)
+    qmsk.args.main(main)

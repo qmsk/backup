@@ -3,33 +3,33 @@
 """
     Manage ZFS snapshots from rsync sources.
 
-    sudo ./opt/bin/pvl.backup-zfs -v tank/backup/test \
+    sudo ./opt/bin/qmsk.backup-zfs -v tank/backup/test \
             --rsync-source=lvm:test/test \
             --snapshot '5@%Y%m%d-%H%M%S' \
             --snapshot '5@%Y%m%d' \
             --snapshot '5@%Y%m' \
             --snapshot '5@%Y' \
-            --purge 
+            --purge
 
 """
 
 import datetime
 import logging
-import pvl.args
-import pvl.backup.zfs
-import pvl.invoke
+import qmsk.args
+import qmsk.backup.zfs
+import qmsk.invoke
 import socket
 
-from pvl.backup import __version__
-from pvl.backup.target import Error, Interval, BaseTarget
+from qmsk.backup import __version__
+from qmsk.backup.target import Error, Interval, BaseTarget
 
-log = logging.getLogger('pvl.backup-zfs')
+log = logging.getLogger('qmsk.backup-zfs')
 
 class ZFSTarget (BaseTarget):
     """
         ZFS rsync snapshot management
     """
-        
+
     @classmethod
     def config (cls, name,
             noop        = None,
@@ -40,15 +40,15 @@ class ZFSTarget (BaseTarget):
             **opts
     ):
         if zfs_source:
-            zfs_source = pvl.backup.zfs.Source.config(zfs_source,
+            zfs_source = qmsk.backup.zfs.Source.config(zfs_source,
                     invoker_options = invoker_options,
                     ssh_options     = ssh_options,
             )
 
         return super(ZFSTarget, cls).config(
-                zfs             = pvl.backup.zfs.Filesystem(name,
+                zfs             = qmsk.backup.zfs.Filesystem(name,
                     noop    = noop,
-                    invoker = pvl.invoke.Invoker(**invoker_options),
+                    invoker = qmsk.invoke.Invoker(**invoker_options),
                 ),
                 zfs_source      = zfs_source,
                 zfs_bookmark    = zfs_bookmark,
@@ -73,24 +73,24 @@ class ZFSTarget (BaseTarget):
         log.warning("%s: create with source=%s", self, source)
 
         self.zfs.create({
-            'pvl-backup:source': source,
+            'qmsk-backup:source': source,
         })
 
     def setup (self, create=False, verify_source=None, force_source=False):
         """
             Verify that the ZFS volume exists.
         """
-                
+
         get_error = None
         zfs_source = {}
 
         try:
-            zfs_source = self.zfs.get('pvl-backup:source')
-        except pvl.backup.zfs.Error as error:
+            zfs_source = self.zfs.get('qmsk-backup:source')
+        except qmsk.backup.zfs.Error as error:
             get_error = error
 
         log.debug("%s setup: get_error=%s, zfs_source=%s", self, get_error, zfs_source)
-        
+
         if get_error:
             if create:
                 # assume error is caused by missing fs
@@ -101,12 +101,12 @@ class ZFSTarget (BaseTarget):
 
         elif verify_source and zfs_source != verify_source:
             if force_source:
-                log.warning("%s: update pvl-backup:source: %s from %s", self, force_source, zfs_source)
+                log.warning("%s: update qmsk-backup:source: %s from %s", self, force_source, zfs_source)
 
-                self.zfs.set('pvl-backup:source', force_source)
+                self.zfs.set('qmsk-backup:source', force_source)
 
             else:
-                raise Error("ZFS %s property pvl-backup.source=%s mismatch, should be %s" % (self, zfs_source, verify_source))
+                raise Error("ZFS %s property qmsk-backup.source=%s mismatch, should be %s" % (self, zfs_source, verify_source))
 
         else:
             # ok
@@ -128,7 +128,7 @@ class ZFSTarget (BaseTarget):
         """
             Create new ZFS snapshot for given timestamp.
 
-            Returns pvl.backup.zfs.Snapshot
+            Returns qmsk.backup.zfs.Snapshot
         """
 
         snapshot_name = now.strftime(self.SNAPSHOT_STRFTIME)
@@ -136,23 +136,23 @@ class ZFSTarget (BaseTarget):
         if self.rsync_source:
             # rsync to local ZFS destination, and then create snapshot
             dest_path = self.mount()
-            
+
             log.info("%s: rsync %s@%s", self, dest_path, snapshot_name)
-        
+
             rsync_stats = self.rsync(dest_path)
-        
+
             log.info("%s: snapshot %s", self, snapshot_name)
-                    
+
             return self.zfs.snapshot(snapshot_name, {
-                'pvl-backup:snapshot':  snapshot_name,
-                'pvl-backup:source':    str(self.rsync_source),
+                'qmsk-backup:snapshot':  snapshot_name,
+                'qmsk-backup:source':    str(self.rsync_source),
             })
 
         elif self.zfs_source:
             # zfs send-recv snapshot
             try:
                 local_snapshot = self.zfs.last_snapshot().name
-            except pvl.backup.zfs.ZFSError as error:
+            except qmsk.backup.zfs.ZFSError as error:
                 log.warning("%s: requesting full send for local ZFS that is assumed to be missing: %s", self, error)
                 incremental_bookmark = None
             else:
@@ -160,7 +160,7 @@ class ZFSTarget (BaseTarget):
 
             # create bookmark
             send_bookmark = self.zfs_bookmark + ':' + snapshot_name
-            
+
             with self.zfs_source.stream_send(
                 incremental     = '#' + incremental_bookmark if incremental_bookmark else None,
                 snapshot        = None, # create temporary snapshot
@@ -171,18 +171,18 @@ class ZFSTarget (BaseTarget):
                 snapshot = self.zfs.receive(snapshot_name, force=True, stdin=stream)
 
             # set properties
-            snapshot.set('pvl-backup:snapshot', snapshot_name)
-            snapshot.set('pvl-backup:source', str(self.zfs_source))
+            snapshot.set('qmsk-backup:snapshot', snapshot_name)
+            snapshot.set('qmsk-backup:source', str(self.zfs_source))
 
             return snapshot
 
         else:
             # just snapshot local ZFS
             return self.zfs.snapshot(snapshot_name, {
-                'pvl-backup:snapshot':  snapshot_name,
-                'pvl-backup:source':    None,
+                'qmsk-backup:snapshot':  snapshot_name,
+                'qmsk-backup:source':    None,
             })
-    
+
     def backup_interval (self, interval, now, snapshot):
         """
             Manage interval holds for snapshot.
@@ -223,19 +223,19 @@ class ZFSTarget (BaseTarget):
 
             if newer_snapshot:
                 log.info("%s: release %s @ %s: deprecated by %s", self, snapshot, hold, newer_snapshot)
-            
+
                 snapshot.release(hold)
             else:
                 interval_snapshots[hold] = snapshot
 
         # release oldest snapshots for each interval period
         hold_snapshots = sorted(interval_snapshots.items(), key=lambda kv: kv[1].name, reverse=True) # newest first
-        
+
         log.debug("%s purge interval=%s limit=%d snapshots=%d", self, interval.name, interval.limit, len(hold_snapshots))
 
         for hold, snapshot in hold_snapshots[interval.limit:]:
             log.info("%s: release %s @ %s", self, snapshot, hold)
-            
+
             snapshot.release(hold)
 
     def purge_snapshots(self, other=None):
@@ -243,11 +243,11 @@ class ZFSTarget (BaseTarget):
             Purge any un-held snapshots
         """
 
-        for snapshot in self.zfs.list_snapshots('pvl-backup:snapshot'):
-            if (not other) and (not snapshot['pvl-backup:snapshot']):
-                log.debug("%s: skip %s: not a pvl-backup snapshot", self, snapshot)
+        for snapshot in self.zfs.list_snapshots('qmsk-backup:snapshot'):
+            if (not other) and (not snapshot['qmsk-backup:snapshot']):
+                log.debug("%s: skip %s: not a qmsk-backup snapshot", self, snapshot)
                 continue
-            
+
             if snapshot.userrefs > 0:
                 log.debug("%s: skip %s: still referenced: %d", self, snapshot, snapshot.userrefs)
                 continue
@@ -260,7 +260,7 @@ class ZFSTarget (BaseTarget):
         """
             Unhold snapshots per interval limits, and destroy un-referenced snapshots.
         """
-        
+
         # collect { Interval.name: [(Snapshot, hold_tag)] }
         interval_snapshot_holds = {}
 
@@ -274,21 +274,21 @@ class ZFSTarget (BaseTarget):
             log.debug("%s: map snapshot %s hold %s -> interval %s", self, snapshot, hold, interval_name)
 
             interval_snapshot_holds.setdefault(interval_name, []).append((snapshot, hold))
-        
+
         # release snapshots per limits
         for interval in self.intervals:
             if interval.limit:
                 snapshots = interval_snapshot_holds.get(interval.name, [])
 
                 self.purge_interval(interval, snapshots)
-        
+
         # destroy released snapshots
         self.purge_snapshots(other=other_snapshots)
 
-ZFS_BOOKMARK = 'pvl-backup:' + socket.gethostname()
+ZFS_BOOKMARK = 'qmsk-backup:' + socket.gethostname()
 
 def main (args):
-    parser = pvl.args.parser(package='backup', module='zfs',
+    parser = qmsk.args.parser(package='backup', module='zfs',
             description = __doc__,
             version     = __version__,
     )
@@ -328,7 +328,7 @@ def main (args):
     parser.add_argument('target', metavar='ZFS', nargs='+',
             help="ZFS target")
 
-    args = pvl.args.parse(parser, args)
+    args = qmsk.args.parse(parser, args)
 
     for target in args.target:
         try:
@@ -347,7 +347,7 @@ def main (args):
                     intervals       = args.intervals,
                     noop            = args.noop
             )
-        except (Error, pvl.backup.zfs.Error) as error:
+        except (Error, qmsk.backup.zfs.Error) as error:
             log.error("%s: %s", target, error)
             return 1
 
@@ -372,11 +372,11 @@ def main (args):
             if args.purge:
                 target.purge(other_snapshots=args.purge_other_snapshots)
 
-        except (Error, pvl.backup.zfs.Error) as error:
+        except (Error, qmsk.backup.zfs.Error) as error:
             log.exception("%s: %s", target, error)
             return 2
 
     return 0
-    
+
 if __name__ == '__main__':
-    pvl.args.main(main)
+    qmsk.args.main(main)

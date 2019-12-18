@@ -2,11 +2,14 @@ import contextlib
 import datetime
 import logging
 
-import pvl.invoke
+import qmsk.invoke
 
-log = logging.getLogger('pvl.backup.zfs')
+log = logging.getLogger('qmsk.backup.zfs')
 
 ZFS = '/sbin/zfs'
+
+SNAPSHOT_PREFIX = 'qmsk-backup'
+PROPERTY_MODULE = 'qmsk.backup'
 
 class Error (Exception):
     pass
@@ -25,32 +28,32 @@ class CommandError (Error):
 
     pass
 
-def zfs(*args, invoker=pvl.invoke.Invoker(), **opts):
+def zfs(*args, invoker=qmsk.invoke.Invoker(), **opts):
     try:
-        stdout = invoker.invoke(ZFS, pvl.invoke.optargs(*args), **opts)
-    except pvl.invoke.InvokeError as error:
+        stdout = invoker.invoke(ZFS, qmsk.invoke.optargs(*args), **opts)
+    except qmsk.invoke.InvokeError as error:
         if error.exit == 1:
             raise ZFSError(error.stderr)
         elif error.exit == 2:
             raise CommandError(error.stderr)
         else:
             raise Error(error.stderr)
-    
+
     if stdout is None:
         return None
     else:
         return [line.strip().split('\t') for line in stdout]
 
 @contextlib.contextmanager
-def snapshot(zfs, snapshot_name=None, **opts):
+def snapshot(zfs, snapshot_name=None, prefix=SNAPSHOT_PREFIX, **opts):
     """
         With ZFS snapshot.
 
-        Generates a temporary pvl-backup_* snapshot by default.
+        Generates a temporary qmsk-backup_* snapshot by default.
     """
 
     if snapshot_name is None:
-        snapshot_name = 'pvl-backup_{timestamp}'.format(timestamp=datetime.datetime.now().isoformat())
+        snapshot_name = '{prefix}_{timestamp}'.format(prefix=prefix, timestamp=datetime.datetime.now().isoformat())
 
     snapshot = zfs.snapshot(snapshot_name, **opts)
 
@@ -128,7 +131,7 @@ class Filesystem (object):
                 return value
 
     def set(self, property, value):
-        self.zfs_write('set', '{property}={value}'.format(property=property, value=value), self.name)        
+        self.zfs_write('set', '{property}={value}'.format(property=property, value=value), self.name)
 
     @property
     def mountpoint(self):
@@ -142,7 +145,7 @@ class Filesystem (object):
     def create(self, properties={}):
         options = ['-o{property}={value}'.format(property=key, value=value) for key, value in properties.items() if value is not None]
         args = options + [self.name]
-        
+
         self.zfs_write('create', *args)
 
     def parse_snapshot(self, name, **opts):
@@ -177,7 +180,7 @@ class Filesystem (object):
 
         for snapshot in self.list_snapshots():
             continue
-        
+
         if snapshot:
             return snapshot
         else:
@@ -196,14 +199,14 @@ class Filesystem (object):
 
             Raises ZFSError if the snapshot already exists.
         """
-        
+
         options = ['-o{property}={value}'.format(property=key, value=value) for key, value in properties.items() if value is not None]
 
         snapshot = Snapshot(self, name, properties, noop=self.noop)
         args = options + [snapshot]
 
         self.zfs_write('snapshot', *args)
-            
+
         if self._snapshots:
             self._snapshots[name] = snapshot
 
@@ -226,7 +229,7 @@ class Filesystem (object):
 
     def bookmark(self, snapshot_name, bookmark):
         self.zfs_write('bookmark', '{snapshot}@{filesystem}'.format(snapshot=snapshot_name, filesystem=self.name), bookmark)
-    
+
     def destroy_bookmark(self, bookmark):
         self.zfs_write('destroy', '{filesystem}#{bookmark}'.format(filesystem=self.name, bookmark=bookmark))
 
@@ -240,7 +243,7 @@ class Filesystem (object):
         #   receiving full stream of test1/test@1 into test2/backup/test@1
         #   received 42,5KB stream in 1 seconds (42,5KB/sec)
         self.zfs_write('receive', '-F' if force else None, target, stdin=stdin)
-        
+
         if snapshot_name:
             return Snapshot(self, snapshot_name)
         else:
@@ -253,7 +256,7 @@ class Snapshot (object):
         filesystem, snapshot = name.split('@', 1)
 
         return cls(filesystem, snapshot, **opts)
-    
+
     def __init__ (self, filesystem, name, properties={}, noop=None, userrefs=None):
         self.filesystem = filesystem
         self.name = name
@@ -306,13 +309,13 @@ class Snapshot (object):
         """
             Write out ZFS contents of this snapshot to stdout.
 
-            incremental: Snapshot, None     - send incremental from given snapshot    
+            incremental: Snapshot, None     - send incremental from given snapshot
             properties: bool                - send ZFS properties
         """
 
-        self.filesystem.zfs_read('send', 
+        self.filesystem.zfs_read('send',
             '-R' if replication_stream else None,
-            '-p' if properties else None, 
+            '-p' if properties else None,
             '-i' + str(incremental) if incremental else None,
             '-I' + str(full_incremental) if full_incremental else None,
             self,
@@ -329,15 +332,15 @@ class Source:
         if ':' in source:
             ssh_host, zfs_name = source.split(':', 1)
 
-            invoker = pvl.invoke.SSHInvoker(ssh_host, **ssh_options)
+            invoker = qmsk.invoke.SSHInvoker(ssh_host, **ssh_options)
         else:
             zfs_name = source
 
-            invoker = pvl.invoke.Invoker(**invoker_options)
+            invoker = qmsk.invoke.Invoker(**invoker_options)
 
         return cls(source, invoker, zfs_name)
 
-    def __init__(self, source, invoker: pvl.invoke.Invoker, zfs_name: str):
+    def __init__(self, source, invoker: qmsk.invoke.Invoker, zfs_name: str):
         self.source = source
         self.invoker = invoker
         self.zfs_name = zfs_name
@@ -355,17 +358,15 @@ class Source:
         if snapshot:
             name += '@' + snapshot
 
-        return self.invoker.stream('zfs', ['send'] + pvl.invoke.optargs(
+        return self.invoker.stream('zfs', ['send'] + qmsk.invoke.optargs(
             '-R' if replication_stream else None,
-            '-p' if properties else None, 
+            '-p' if properties else None,
             '-i' + str(incremental) if incremental else None,
             '-I' + str(full_incremental) if full_incremental else None,
-            
+
             name,
 
-            # custom pvl.backup-ssh-command extensions
+            # custom qmsk.backup-ssh-command extensions
             bookmark = bookmark,
             purge_bookmark = purge_bookmark,
         ))
-
-

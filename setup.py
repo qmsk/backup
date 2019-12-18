@@ -3,25 +3,25 @@
 from distutils.core import setup
 
 setup(
-    name            = 'pvl-backup',
-    version         = '1.3-dev',
+    name            = 'qmsk-backup',
+    version         = '1.0-dev',
 
-    description     = "Paivola rsync backup utilities",
-    url             = 'http://verkko.paivola.fi/hg/pvl-backup/',
+    description     = "Automated LVM/ZFS snapshot, rsync backups",
+    url             = 'https://github.com/qmsk/backup',
     license         = 'MIT',
 
     author          = 'Tero Marttila',
-    author_email    = 'terom@paivola.fi',
+    author_email    = 'terom@fixme.fi',
 
     namespace_packages = [
-        'pvl',
+        'qmsk',
     ],
     packages = [
-        'pvl.backup',
+        'qmsk.backup',
     ],
     py_modules = [
-        'pvl.args',
-        'pvl.invoke',
+        'qmsk.args',
+        'qmsk.invoke',
     ],
 
     install_requires = [
@@ -30,10 +30,10 @@ setup(
 
     # binaries
     scripts = [
-        'bin/pvl.backup-rsync',
-        'bin/pvl.backup-target',
-        'bin/pvl.backup-zfs',
-        'bin/pvl.zfs-ssh-command',
-        'bin/pvl.zfs-sync',
+        'bin/qmsk.backup-rsync',
+        'bin/qmsk.backup-target',
+        'bin/qmsk.backup-zfs',
+        'bin/qmsk.zfs-ssh-command',
+        'bin/qmsk.zfs-sync',
     ],
 )

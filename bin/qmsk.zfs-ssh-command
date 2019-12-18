@@ -6,23 +6,23 @@
     Testing:
         virtualenv opt && ./opt/bin/pip install -e
 
-        sudo SSH_ORIG_COMMAND='zfs send ...' ./opt/bin/pvl.zfs-ssh-command
+        sudo SSH_ORIG_COMMAND='zfs send ...' ./opt/bin/qmsk.zfs-ssh-command
 
-        ./opt/bin/pvl.zfs-ssh-command -- zfs send ...
+        ./opt/bin/qmsk.zfs-ssh-command -- zfs send ...
 
 """
 
-from pvl.backup import __version__
+from qmsk.backup import __version__
 
 import argparse
 import contextlib
 import logging
 import os.path
-import pvl.args
-import pvl.backup.zfs
+import qmsk.args
+import qmsk.backup.zfs
 import shlex
 
-log = logging.getLogger('pvl.backup-ssh-command')
+log = logging.getLogger('qmsk.backup-ssh-command')
 
 @contextlib.contextmanager
 def wrap_context(value):
@@ -50,11 +50,11 @@ class Wrapper:
             zfs_name = target
             snapshot_name = None
 
-        zfs = pvl.backup.zfs.open(zfs_name,
+        zfs = qmsk.backup.zfs.open(zfs_name,
             noop    = self.noop,
-            invoker = pvl.invoke.Invoker(sudo=self.sudo),
+            invoker = qmsk.invoke.Invoker(sudo=self.sudo),
         )
-        
+
         incremental_snapshot = incremental_bookmark = None
         send_incremental = full_incremental = None
 
@@ -64,10 +64,10 @@ class Wrapper:
             send_incremental = incremental_snapshot = zfs.snapshots[args.incremental_snapshot]
         elif args.incremental_full:
             full_incremental = incremental_snapshot = zfs.snapshots[args.incremental_full]
-    
+
         if snapshot_name is None: # zfs send tank/foo
             # send from temporary snapshot
-            snapshot_context = pvl.backup.zfs.snapshot(zfs, properties={'pvl-backup:send': incremental_snapshot})
+            snapshot_context = qmsk.backup.zfs.snapshot(zfs, properties={'qmsk-backup:send': incremental_snapshot})
 
         elif snapshot_name == '*': # zfs send tank/foo@*
             # send from most recent snapshot
@@ -76,9 +76,9 @@ class Wrapper:
         else: # zfs send tank/foo@xxx
             # send from given snapshot
             snapshot_context = wrap_context(zfs.snapshots[snapshot_name])
-        
+
         log.info("zfs send %s from incremental=%s to snapshot=@%s with bookmark=%s", zfs, send_incremental, snapshot_context, args.bookmark)
-   
+
         with snapshot_context as snapshot:
             snapshot.send(
                 incremental         = send_incremental,
@@ -86,11 +86,11 @@ class Wrapper:
                 properties          = args.properties,
                 replication_stream  = args.replication,
             )
- 
+
             if args.bookmark:
                 # mookmark the send snapshot for next send
                 snapshot.bookmark(args.bookmark)
-        
+
         if args.purge_bookmark:
             zfs.destroy_bookmark(args.purge_bookmark)
 
@@ -135,7 +135,7 @@ def main (args):
         Run, with full argv
     """
 
-    parser = pvl.args.parser(package='backup', module='ssh-command',
+    parser = qmsk.args.parser(package='backup', module='ssh-command',
             description = __doc__,
             version     = __version__,
     )
@@ -154,9 +154,9 @@ def main (args):
     )
 
     # parse
-    args = pvl.args.parse(parser, args)
-    
-    # from args (as given by `rsync -e pvl.backup-rsync`) -> 'pvl.backup-rsync <host> (<command> ...)'
+    args = qmsk.args.parse(parser, args)
+
+    # from args (as given by `rsync -e qmsk.backup-rsync`) -> 'qmsk.backup-rsync <host> (<command> ...)'
     if args.command:
         command_parts = args.command
 
@@ -173,7 +173,7 @@ def main (args):
             noop        = args.noop,
             sudo        = args.sudo,
         )
-        
+
         return wrapper(command_parts[0], command_parts[1:])
 
     except Exception as error:
@@ -181,4 +181,4 @@ def main (args):
         return 3
 
 if __name__ == '__main__':
-    pvl.args.main(main)
+    qmsk.args.main(main)

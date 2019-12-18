@@ -6,4 +6,4 @@
 
 import pkg_resources
 
-__version__ = pkg_resources.get_distribution('pvl-backup').version
+__version__ = pkg_resources.get_distribution('qmsk-backup').version

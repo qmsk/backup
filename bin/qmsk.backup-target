@@ -9,14 +9,14 @@ import json
 import logging
 import os
 import os.path
-import pvl.args
+import qmsk.args
 import shutil
 import stat
 
-from pvl.backup import __version__
-from pvl.backup.target import Interval, BaseTarget
+from qmsk.backup import __version__
+from qmsk.backup.target import Interval, BaseTarget
 
-log = logging.getLogger('pvl.backup-target')
+log = logging.getLogger('qmsk.backup-target')
 
 class Error(Exception):
     pass
@@ -162,7 +162,7 @@ class Target(BaseTarget):
                     link_dest   = link_dest,
             )
 
-        except pvl.backup.rsync.Error as ex:
+        except qmsk.backup.rsync.Error as ex:
             # leave the .new snapshot in place to be purged
             log.warning("%s: rsync failed: %s", ex)
 
@@ -385,7 +385,7 @@ def meta_duration(meta):
     return end - start
 
 def main (args):
-    parser = pvl.args.parser(package='backup', module='target',
+    parser = qmsk.args.parser(package='backup', module='target',
             description = __doc__,
             version     = __version__,
     )
@@ -419,7 +419,7 @@ def main (args):
             backup      = None,
     )
 
-    args = pvl.args.parse(parser, args)
+    args = qmsk.args.parse(parser, args)
 
     for target in args.target:
         try:
@@ -454,7 +454,7 @@ def main (args):
                 target.purge()
 
             if args.stats:
-                pvl.backup.rsync.print_stats([(name, meta_duration(meta), meta['stats']) for name, meta in  target.meta()])
+                qmsk.backup.rsync.print_stats([(name, meta_duration(meta), meta['stats']) for name, meta in  target.meta()])
 
         except Error as error:
             log.exception("%s: %s", target, error)
@@ -463,4 +463,4 @@ def main (args):
     return 0
     
 if __name__ == '__main__':
-    pvl.args.main(main)
+    qmsk.args.main(main)

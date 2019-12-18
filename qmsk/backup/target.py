@@ -1,10 +1,10 @@
 import datetime
 import logging
 import os.path
-import pvl.backup.rsync
-import pvl.invoke
+import qmsk.backup.rsync
+import qmsk.invoke
 
-log = logging.getLogger('pvl.backup.target')
+log = logging.getLogger('qmsk.backup.target')
 
 class Error (Exception):
     pass
@@ -125,10 +125,10 @@ class BaseTarget:
 
         if rsync_source:
             try:
-                rsync_source    = pvl.backup.rsync.parse_source(rsync_source,
+                rsync_source    = qmsk.backup.rsync.parse_source(rsync_source,
                         sudo    = sudo,
                 )
-            except pvl.backup.rsync.SourceError as error:
+            except qmsk.backup.rsync.SourceError as error:
                 raise Error("--source=%s: %s", source, error)
        
         _rsync_options = dict(cls.RSYNC_OPTIONS)
@@ -179,7 +179,7 @@ class BaseTarget:
 
             Return the --stats dict, or None if unparseable.
 
-            Raises pvl.backup.rsync.Error
+            Raises qmsk.backup.rsync.Error
         """
         
         rsync_options = dict(self.rsync_options)
@@ -191,13 +191,13 @@ class BaseTarget:
         # use stats
         rsync_options['stats'] = True
  
-        opts = pvl.invoke.optargs(**rsync_options)
+        opts = qmsk.invoke.optargs(**rsync_options)
 
         try:
             # run the rsync.RSyncServer; None as a placeholder will get replaced with the actual source
             stats = self.rsync_source.rsync(opts, dest_path)
 
-        except pvl.backup.rsync.Error as error:
+        except qmsk.backup.rsync.Error as error:
             log.warn("%s rsync error: %s", self, error)
             raise
 

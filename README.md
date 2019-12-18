@@ -1,28 +1,27 @@
-# `rsync` Backup tools
+#  Automated LVM/ZFS snapshot, rsync backups
 
 Supports incremental rsync backups over SSH, from remote LVM and ZFS filesystem snapshots to local `rsync --link-dest` or ZFS snapshots.
 
 ## Install
 
-    virtualenv -p python3 /opt/pvl-backup && /opt/pvl-backup/bin/pip install \
-        git+https://gitlab.paivola.fi/tech/pvl-common.git@1.0.0 
-        git+https://gitlab.paivola.fi/tech/pvl-backup.git@1.2.4
+    virtualenv -p python3 /opt/qmsk-backup && /opt/qmsk-backup/bin/pip install \
+        git+https://github.com/qmsk/backup.git@1.0.0
 
 ## Usage
 
 ### Scripts
 
-The `pvl.backup-*` scripts does not use any configuration file, all configuration is in the form of options.
+The `qmsk.backup-*` scripts does not use any configuration file, all configuration is in the form of options.
 You can create a backup script file for each backup target, such as:
 
-#### `/etc/pvl/backup/targets/test`
+#### `/etc/qmsk-backup/targets/test`
 ```
 #!/bin/bash
 
-exec /opt/pvl-backup/bin/pvl.backup-target /srv/backup/test \
-        --rsync-source='pvl-backup@test.example.com:lvm:raid10/test-root' \
+exec /opt/qmsk-backup/bin/qmsk.backup-target /srv/backup/test \
+        --rsync-source='backup@test.example.com:lvm:raid10/test-root' \
         --rsync-option='rsh=ssh -F /srv/backup/.ssh/config' \
-        --rsync-option='exclude-from=/etc/pvl/backup/rsync.exclude' \
+        --rsync-option='exclude-from=/etc/qmsk-backup/rsync.exclude' \
         --interval='10@recent:%Y%m%d-%H%M%S' \
         --interval='7@day:%Y-%m-%d' \
         --interval='4@week:%Y-%W' \
@@ -35,14 +34,14 @@ Use a wrapper script such as the following to run multiple targets from cron.
 You probably want to have cron run the wrapper script with `--purge`:
 
 ```
-15 22 * * *   root         /etc/pvl/backup/targets.sh --purge
+15 22 * * *   root         /etc/qmsk-backup/targets.sh --purge
 ```
 
-#### `/etc/pvl/backup/targets.sh`
+#### `/etc/qmsk-backup/targets.sh`
 ```
 #!/bin/bash
 
-for target in /etc/pvl/backup/targets/*; do
+for target in /etc/qmsk-backup/targets/*; do
         [ -x $target ] || continue
 
         $target "$@"
@@ -53,9 +52,9 @@ done
 
 ### Restricted `rsync`for `.ssh/authorized_keys` `command=`
 
-The `bin/pvl.backup-rsync` script can be used as an `~/.ssh/authorized_keys` `command="..."` wrapper, and provides options to restrict/secure access:
-        
-        command="/opt/pvl-backup/bin/pvl.backup-rsync --readonly --restrict-path=/foo" ssh-rsa ...
+The `bin/qmsk.backup-rsync` script can be used as an `~/.ssh/authorized_keys` `command="..."` wrapper, and provides options to restrict/secure access:
+
+        command="/opt/qmsk-backup/bin/qmsk.backup-rsync --readonly --restrict-path=/foo" ssh-rsa ...
 
 
 ***NOTE***: the current implementation is not exactly security-audited, the restrictions serve more to avoid mistakes, and do not protect against
@@ -77,7 +76,7 @@ Run any `rsync`, `lvm`, `mount` operations using sudo, which allows for use of n
 
 The rsync source syntax is extended to support `lvm:<vg>/<lv>`, which creates an LVM snapshot of the LV, mounts it readonly, and runs rsync from the mounted snapshot. This allows for atomic rsync operations, to avoid rsync "file has vanished" etc errors where files change during the rsync operation.
 
-This syntax is supported for both local rsync sources, as well as by the remote `pvl.backup-rsync` wrapper.
+This syntax is supported for both local rsync sources, as well as by the remote `qmsk.backup-rsync` wrapper.
 
 When rsyncing from a remote LVM snapshot, the source syntax is:
 
@@ -91,21 +90,21 @@ The rsync source syntax also supports two forms of ZFS filesystems: `zfs:<pool>/
 The former will take a `zfs snapshot <pool>/<name>`, mount that, and rsync the contents of the ZFS root.
 The later will find the ZFS mount for the given path, take a ZFS snapshot, mount it, and rsync the contents of that path within the ZFS snapshot.
 
-This syntax is supported for both local rsync sources, as well as by the remote `pvl.backup-rsync` wrapper.
+This syntax is supported for both local rsync sources, as well as by the remote `qmsk.backup-rsync` wrapper.
 
 ### `rsync --link-dest` snapshot storage
 
-The `pvl.backup-target` script can be used to manage incremental backups as a series of hardlinked filesystem trees over traditional filesystems like ext4.
+The `qmsk.backup-target` script can be used to manage incremental backups as a series of hardlinked filesystem trees over traditional filesystems like ext4.
 This uses `rsync --link-dest` internally to hardlink files between snapshots, and only store changed files on disk.
 
 #### `rsync --stats`
 
-The `pvl.backup-target` will collect additional `snapshots/*.meta` JSON files containing the `start` and `end `time of the backup, and the rsync paths used:
+The `qmsk.backup-target` will collect additional `snapshots/*.meta` JSON files containing the `start` and `end `time of the backup, and the rsync paths used:
 
 ```json
 {
    "link_dest" : "/srv/backup/rauta/snapshots/20161230-223923",
-   "rsync_source" : "pvl-backup@rauta.paivola.fi:lvm:raid10/herukka-root",
+   "rsync_source" : "backup@rauta.paivola.fi:lvm:raid10/herukka-root",
    "stats" : {
       "Total file size" : 4410744757,
       "File list generation time" : 0.172,
@@ -124,7 +123,7 @@ The `pvl.backup-target` will collect additional `snapshots/*.meta` JSON files co
 }
 ```
 
-Use `pvl.backup-target --no-backup --stats` to summarize this output:
+Use `qmsk.backup-target --no-backup --stats` to summarize this output:
 
 ```
 NAME               TIME       |    FILES /    TOTAL =       % |     SIZE /    TOTAL =       % |     SEND     RECV
@@ -183,7 +182,5 @@ This lists the disk usage of each snapshot in reverse order, such that it tells 
 
 ### zfs snapshot storage
 
-The `pvl.backup-zfs` script can be used manage ZFS snapshots with retention intervals.
+The `qmsk.backup-zfs` script can be used manage ZFS snapshots with retention intervals.
 It also supports using rsync to backup remote filesystems onto the local ZFS filesystems before snapshotting.
-
-
