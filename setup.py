@@ -13,20 +13,24 @@ setup(
     author          = 'Tero Marttila',
     author_email    = 'terom@paivola.fi',
 
-    namespace_packages = [ 
+    namespace_packages = [
         'pvl',
     ],
     packages = [
         'pvl.backup',
     ],
+    py_modules = [
+        'pvl.args',
+        'pvl.invoke',
+    ],
 
     install_requires = [
-        'pvl-common>=1.1, <1.2'
+
     ],
- 
+
     # binaries
     scripts = [
-        'bin/pvl.backup-rsync', 
+        'bin/pvl.backup-rsync',
         'bin/pvl.backup-target',
         'bin/pvl.backup-zfs',
         'bin/pvl.zfs-ssh-command',
