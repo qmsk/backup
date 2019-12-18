@@ -31,8 +31,8 @@ setup(
     # binaries
     scripts = [
         'bin/qmsk.backup-rsync',
-        'bin/qmsk.backup-target',
         'bin/qmsk.backup-zfs',
+        'bin/qmsk.rsync-ssh-command',
         'bin/qmsk.zfs-ssh-command',
         'bin/qmsk.zfs-sync',
     ],

@@ -1,154 +1,466 @@
 #!/usr/bin/python3
 
 """
-    rsync --server --sender wrapper for use with SSH authorized_keys command="...", with additional support for LVM snapshots.
-
-    Testing:
-        virtualenv opt && ./opt/bin/pip install -e
-
-        sudo SSH_ORIG_COMMAND='rsync --server --sender -ax . lvm:asdf:test' ./opt/bin/qmsk.backup-rsync -v
-
-        sudo rsync -e './opt/bin/qmsk.backup-rsync --debug --' -ax testing:lvm:asdf:test test/tmp"
+    Backup rsync sources into rsync --link-dest snapshots.
 """
 
+import datetime
+import json
 import logging
 import os
+import os.path
 import qmsk.args
-import qmsk.backup.rsync
-import qmsk.invoke
-import shlex
+import shutil
+import stat
 
 from qmsk.backup import __version__
-from qmsk.backup import lvm
+from qmsk.backup.target import Interval, BaseTarget
 
-log = logging.getLogger('qmsk.backup-rsync')
+log = logging.getLogger('qmsk.backup-target')
 
-def rsync_wrapper (args, command, server=False):
+class Error(Exception):
+    pass
+
+def walk_symlinks (tree, recurse=0, ignore=False) :
     """
-        Wrap given rsync command, parsing options/path, determining source, and running rsync in the source.
+        Walk through all symlinks in given dir, yielding:
 
-        Parses the command, the source path, and then executes rsync within the source path (which may be a special
-        pseudo-path with additional handling).
+            (path, target)
 
-            server      - assume rsync --server mode operation
+        Passes through errors from os.listdir/os.lstat.
     """
 
-    # parse --sender command
-    try :
-        rsync_options, source_path = qmsk.backup.rsync.parse_sender_command(command)
-    except qmsk.backup.rsync.CommandError as error:
-        log.error("Invalid rsync command %r: %s", command, error)
-        return 2
-    
-    # parse source path
-    try :
-        rsync_source = qmsk.backup.rsync.parse_source(source_path,
-                restrict_paths      = args.restrict_path,
-                allow_remote        = args.allow_remote,
-                sudo                = args.sudo,
-                lvm_opts            = dict(
-                    size    = args.snapshot_size, 
-                    wait    = args.snapshot_wait,
-                    retry   = args.snapshot_retry,
-                ),
+    for name in os.listdir(tree):
+        if name.startswith('.'):
+            log.debug("%s: ignore dotfile: %s", tree, name)
+            continue
+
+        if ignore and name in ignore:
+            log.debug("%s: ignore: %s", tree, name)
+            continue
+
+        path = os.path.join(tree, name)
+
+        # stat symlink itself
+        st = os.lstat(path)
+
+        if stat.S_ISDIR(st.st_mode):
+            # recurse
+            log.debug("%s: tree: %s", tree, name)
+
+            if recurse > 0:
+                for path, target in walk_symlinks(path,
+                        recurse = recurse - 1,
+                        ignore  = ignore,
+                ):
+                    yield path, target
+
+        elif stat.S_ISLNK(st.st_mode):
+            # found
+            target = os.path.normpath(os.path.join(tree, os.readlink(path)))
+
+            log.debug("%s: link: %s -> %s", tree, name, target)
+
+            yield path, target
+
+        else :
+            log.debug("%s: skip: %s", tree, name)
+
+class Target(BaseTarget):
+    """
+        Use rsync hardlinks for incremental snapshots, and symlinks to manage intervals.
+    """
+
+    @classmethod
+    def config (cls, path,
+            **opts
+    ):
+        return super().config(
+                path            = path,
+                **opts
+        )
+
+    def __init__ (self, path, noop=None, **opts):
+        super().__init__(**opts)
+
+        self.noop = noop
+
+        self.path = os.path.abspath(path)
+        self.snapshots_path = os.path.join(self.path, 'snapshots')
+        self.snapshot_path = os.path.join(self.path, 'snapshot')
+
+    def __str__ (self):
+        return str(self.path)
+
+    def setup (self, create=False):
+        """
+            Verify that the destination tree exists.
+        """
+
+        if os.path.exists(self.path):
+            pass
+        elif create:
+            log.warning("Create target directory: %s", self.path)
+
+            os.mkdir(self.path)
+        else:
+            raise Error("Missing target directory: {path}".format(path=self.path))
+
+        if os.path.exists(self.snapshots_path):
+            pass
+        elif create:
+            log.warn("Creating snapshots directory: %s", self.snapshots_path)
+            os.mkdir(self.snapshots_path)
+        else:
+            raise Error("Missing snapshots directory: {path}".format(path=self.snapshots_path))
+
+        # TODO: rename current -> snapshot
+
+    def snapshot (self, now):
+        """
+            Update the current snapshot to point to a new snapshot for the given datetime, containing changes from rsync.
+
+            Returns the name of the new snapshot on completion.
+
+            Raises rsync.RsyncError or Error.
+        """
+
+        # new snapshot
+        snapshot_name = now.strftime(self.SNAPSHOT_STRFTIME)
+        snapshot_path = os.path.join(self.snapshots_path, snapshot_name)
+
+        if os.path.exists(snapshot_path):
+            raise Error("Snapshot already exists: {path}".format(path=snapshot_path))
+
+        if os.path.exists(self.snapshot_path):
+            # link-dest from previous snapshot
+            target_path = os.path.join(os.path.dirname(self.snapshot_path), os.readlink(self.snapshot_path))
+
+            # use as link-dest base; hardlinks unchanged files; target directory must be empty
+            link_dest = target_path
+
+        else :
+            link_dest = None
+
+        # log
+        log.info("%s: snapshot %s with link_dest=%s", self, snapshot_name, link_dest)
+
+        # rsync
+        new_path = snapshot_path + '.new'
+        meta_path = snapshot_path + '.meta'
+
+        log.debug("%s: rsync %s -> %s --link-dest=%s", self, self.rsync_source, new_path, link_dest)
+
+        meta = {
+                'rsync_source': str(self.rsync_source),
+                'link_dest':    link_dest,
+                'start':        datetime.datetime.utcnow().isoformat(),
+        }
+
+        try:
+            stats = self.rsync(new_path,
+                    link_dest   = link_dest,
             )
 
-    except qmsk.backup.rsync.SourceError as error:
-        log.error("Invalid rsync source: %r: %s", source_path, error)
-        return 2
+        except qmsk.backup.rsync.Error as ex:
+            # leave the .new snapshot in place to be purged
+            log.warning("%s: rsync failed: %s", ex)
 
-    # noop?
-    if args.noop:
-        log.info("noop: %r -> %r: execute(%r, %r)", path, source, rsync_options, srcdst)
-        return 0
+            # run() handles this
+            raise
 
-    # execute
-    try:
-        # run rsync within the source (may perform additional stuff like snapshot...)
-        rsync_source.rsync_sender(rsync_options)
+        else:
+            meta['end'] = datetime.datetime.utcnow().isoformat()
 
-    except qmsk.invoke.InvokeError as error:
-        log.error("rsync failed: %s", error)
-        return error.exit
-    
-    else:
-        log.debug("rsync ok")
+            # move in to final name
+            log.debug("rename %s -> %s", new_path, snapshot_path)
+            os.rename(new_path, snapshot_path)
 
-    # ok
-    return 0
+            # write stats
+            if stats:
+                meta['stats'] = stats
+
+        # write out stats
+        log.debug("write out meta file: %s", meta_path)
+
+        json.dump(meta, open(meta_path, 'w'))
+
+        # update snapshot
+        symlink = os.path.join('snapshots', snapshot_name)
+
+        log.debug("symlink %s <- %s", symlink, self.snapshot_path)
+
+        if os.path.islink(self.snapshot_path):
+            os.unlink(self.snapshot_path)
+
+        os.symlink(symlink, self.snapshot_path)
+
+        return snapshot_name
+
+    def backup_interval (self, interval, now, snapshot_name, setup_create=False):
+        """
+            Create interval symlinks for managing retention of the given snapshot.
+
+            Intervals that already have a snapshot are skipped.
+        """
+
+        snapshot_path = os.path.join(self.path, 'snapshots', snapshot_name)
+
+        # setup
+        dir_path = os.path.join(self.path, interval.name)
+
+        if os.path.isdir(dir_path):
+            pass
+        elif setup_create:
+            log.warning("create interval dir: %s", dir_path)
+            os.mkdir(dir_path)
+        else:
+            raise Error("Interval directory {dir} is missing, use --setup-create?".format(dir=dir_path))
+
+        # prepare
+        name = interval.format(now)
+        path = os.path.join(dir_path, name)
+
+        if not os.path.exists(path):
+            log.info("create interval: %s/%s -> %s", interval.name, name, snapshot_name)
+            os.symlink(snapshot_path, path)
+        else:
+            log.info("skip interval %s/%s -> %s", interval.name, name, os.readlink(path))
+
+    def iter_snapshots (self):
+        """
+            Yield (snapshot_name) of found snapshots.
+        """
+
+        for name in os.listdir(self.snapshots_path):
+            path = os.path.join(self.snapshots_path, name)
+
+            if name.startswith('.'):
+                log.warning("Ignore dotfile in snapshots dir: %s", name)
+                continue
+
+            if not os.path.isdir(path):
+                log.debug("Ignore non-directory in snapshots dir: %s", name)
+                continue
+
+            if name.endswith('.new'):
+                snapshot_name = name[:-4]
+            else:
+                snapshot_name = name
+
+            try:
+                when = datetime.datetime.strptime(snapshot_name, self.SNAPSHOT_STRFTIME)
+            except ValueError as error:
+                raise Error("Invalid snapshot %s found: %s", name, error)
+
+            yield name
+
+    def iter_interval_snapshots (self, tree, **opts):
+        """
+            Yield (snapshot_name, path) of found snapshot symlinks from given dir.
+        """
+
+        for path, target_path in walk_symlinks(tree, **opts):
+            # read snapshot target
+            target_dir, target_name = os.path.split(target_path)
+
+            if target_dir != self.snapshots_path:
+                raise Error("Invalid symlink to non-snapshot: %s -> %s", path, target_path)
+            else:
+                snapshot_name = target_name
+
+            yield snapshot_name, path
+
+    def purge_interval (self, interval):
+        """
+            Purge any extra interval symlinks over the configured limit.
+        """
+
+        interval_dir = os.path.join(self.path, interval.name)
+
+        snapshots = list(self.iter_interval_snapshots(interval_dir))
+
+        # preserve most recent snapshots, sorting by the snapshot_name descending, i.e. most recent snapshots first
+        snapshots.sort(reverse=True)
+
+        purge_snapshots = snapshots[interval.limit:]
+
+        for snapshot_name, interval_path in purge_snapshots:
+            log.info("Purging interval %s/%s: %s", interval.name, os.path.basename(interval_path), snapshot_name)
+
+            if self.noop:
+                log.warning("os.unlink(%r)", interval_path)
+            else:
+                os.unlink(interval_path)
+
+    def backup (self, setup_create=None, purge=None):
+        """
+            Run backup, managing snapshots.
+        """
+
+        # start
+        now = datetime.datetime.now()
+
+        snapshot = self.snapshot(now)
+
+        for interval in self.intervals:
+            self.backup_interval(interval, now, snapshot,
+                    setup_create    = setup_create,
+            )
+
+            if purge:
+                self.purge_interval(interval)
+
+    def purge_snapshot(self, name):
+        """
+            Purge given snapshot.
+        """
+
+        path = os.path.join(self.snapshots_path, name)
+        meta_path = path + '.meta'
+
+        log.info("Purging snapshot %s: %s", name, path)
+
+        if os.path.exists(meta_path):
+            if self.noop:
+                log.warning("os.unlink(%r)", meta_path)
+            else:
+                os.unlink(meta_path)
+
+        if self.noop:
+            log.warning("shutil.rmtree(%r)", path)
+        else:
+            shutil.rmtree(path)
+
+    def purge (self):
+        """
+            Purge unlinked snapshots.
+        """
+
+        # list all snapshots
+        snapshots = set(self.iter_snapshots())
+
+        # list all snapshot links
+        interval_snapshots = list(self.iter_interval_snapshots(self.path, recurse=1, ignore={'snapshots'}))
+
+        for snapshot_name, interval_path in interval_snapshots:
+            if snapshot_name not in snapshots:
+                log.warning("Missing snapshot %s: %s", snapshot_name, interval_path)
+            else:
+                log.debug("found snapshot %s: %s", snapshot_name, interval_path)
+
+        # purge unlinked snapshots
+        linked_snapshots = {snapshot_name for snapshot_name, interval_path in interval_snapshots}
+
+        for snapshot_name in sorted(snapshots & linked_snapshots):
+            log.debug("Keeping snapshot %s", snapshot_name)
+
+        for snapshot_name in snapshots - linked_snapshots:
+            self.purge_snapshot(snapshot_name)
+
+    def meta(self):
+        """
+            Yield (name, meta) for snapshots/*.met
+        """
+
+        for snapshot in sorted(self.iter_snapshots()):
+            path = os.path.join(self.snapshots_path, snapshot + '.meta')
+
+            if os.path.exists(path):
+                with open(path) as file:
+                    meta = json.load(file)
+
+                yield snapshot, meta
+
+META_TIMESTAMP_STRFTIME = '%Y-%m-%dT%H:%M:%S.%f'
+
+def meta_duration(meta):
+    """
+        Return datetime.timedelta from meta dict.
+    """
+
+    start = datetime.datetime.strptime(meta['start'], META_TIMESTAMP_STRFTIME)
+    end = datetime.datetime.strptime(meta['end'], META_TIMESTAMP_STRFTIME)
+
+    return end - start
 
 def main (args):
-    """
-        Run, with full argv
-    """
-
-    parser = qmsk.args.parser(package='backup', module='rsync',
+    parser = qmsk.args.parser(package='backup', module='target',
             description = __doc__,
             version     = __version__,
     )
 
-    # options
-    parser.add_argument('-n', '--noop', action='store_true', default=False,
-            help="Parse command, but do not execute")
+    parser.add_argument('-n', '--noop', action='store_true',
+            help="No-op")
+    parser.add_argument('--sudo', action='store_true',
+            help="Run rsync via sudo")
 
-    parser.add_argument('-R', '--readonly',   action='store_true', default=False,
-            help="Restrict to read/source mode")
+    parser.add_argument('--setup-create', action='store_true',
+            help="Setup new backup destination")
 
-    parser.add_argument('-P', '--restrict-path', metavar='PATH', action='append',
-            help="Restrict to given path prefix(s)")
+    parser.add_argument('--rsync-source', metavar='RSYNC-SOURCE',
+            help="Backup rsync source")
+    parser.add_argument('--rsync-option', metavar='-option', action='append', dest='rsync_options', default=[],
+            help="Pass rsync options")
 
-    parser.add_argument('--sudo',             action='store_true',
-            help="Execute rsync under sudo")
-    
-    parser.add_argument('--allow-remote',     action='store_true', default=False,
-            help="Allow remote rsync sources")
+    parser.add_argument('--no-backup', action='store_false', dest='backup',
+            help="Skip backup snapshot (and purge)")
+    parser.add_argument('--interval', metavar=Interval.METAVAR, action='append', dest='intervals', type=Interval.config, default=[],
+            help="Backup retention intervals")
+    parser.add_argument('--purge', action='store_true',
+            help="Purge old snapshots")
+    parser.add_argument('--stats', action='store_true',
+            help="Output stats from snapshots")
 
-    # lvm options
-    parser.add_argument('-L', '--snapshot-size', metavar='SIZE', default=lvm.LVM_SNAPSHOT_SIZE,
-            help="create snapshot with given LV size (used to store writes during backup)")
-
-    parser.add_argument('--snapshot-wait', metavar='SECONDS', default=lvm.LVM_SNAPSHOT_WAIT, type=float,
-            help="wait for snapshot to settle after unmounting")
-
-    parser.add_argument('--snapshot-retry', metavar='RETRY', default=lvm.LVM_SNAPSHOT_RETRY, type=int,
-            help="retry snapshot removal by given iterations")
-
-    # rsync command
-    parser.add_argument('--ssh-command', metavar='CMD', default=os.environ.get('SSH_ORIGINAL_COMMAND'),
-            help="Rsync command to wrap")
-
-    parser.add_argument('rsync_command', metavar='RSYNC...', nargs='*',
-            help="Rsync command")
+    parser.add_argument('target', metavar='PATH', nargs='+',
+            help="rsync target directory")
 
     parser.set_defaults(
-        restrict_path   = [],
+            backup      = None,
     )
 
-    # parse
     args = qmsk.args.parse(parser, args)
-    
-    # from args (as given by `rsync -e qmsk.backup-rsync`) -> 'qmsk.backup-rsync <host> (<command> ...)'
-    if args.ssh_command:
-        # from ssh authorized_keys command="..."
-        command_parts = shlex.split(args.ssh_command)
 
-    elif args.rsync_command:
-        host = args.rsync_command.pop(0)
-        command_parts = args.rsync_command
+    for target in args.target:
+        try:
+            target = Target.config(target,
+                    rsync_source    = args.rsync_source,
+                    rsync_options   = args.rsync_options,
+                    intervals       = args.intervals,
+                    noop            = args.noop,
+                    sudo            = args.sudo,
+            )
+        except Error as error:
+            log.error("%s: %s", target, error)
+            return 1
+        else:
+            log.info("%s", target)
 
-        log.debug("host=%r, using command from args: %r", host, command_parts)
-    
-    else:
-        log.error("No rsync command given")
-        return 2
+        try:
+            target.setup(
+                    create          = args.setup_create,
+            )
 
-    # run
-    try:
-        return rsync_wrapper(args, command_parts)
+            if args.backup is False:
+                log.debug("Skip backup")
+            else:
+                target.backup(
+                        setup_create    = args.setup_create,
+                        purge           = args.purge,
+                )
 
-    except Exception as error:
-        log.exception("Internal error: %s", error)
-        return 3
+            # purge snapshots
+            if args.purge:
+                target.purge()
+
+            if args.stats:
+                qmsk.backup.rsync.print_stats([(name, meta_duration(meta), meta['stats']) for name, meta in  target.meta()])
+
+        except Error as error:
+            log.exception("%s: %s", target, error)
+            return 2
+
+    return 0
 
 if __name__ == '__main__':
     qmsk.args.main(main)

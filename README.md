@@ -18,7 +18,7 @@ You can create a backup script file for each backup target, such as:
 ```
 #!/bin/bash
 
-exec /opt/qmsk-backup/bin/qmsk.backup-target /srv/backup/test \
+exec /opt/qmsk-backup/bin/qmsk.backup-rsync /srv/backup/test \
         --rsync-source='backup@test.example.com:lvm:raid10/test-root' \
         --rsync-option='rsh=ssh -F /srv/backup/.ssh/config' \
         --rsync-option='exclude-from=/etc/qmsk-backup/rsync.exclude' \
@@ -52,13 +52,12 @@ done
 
 ### Restricted `rsync`for `.ssh/authorized_keys` `command=`
 
-The `bin/qmsk.backup-rsync` script can be used as an `~/.ssh/authorized_keys` `command="..."` wrapper, and provides options to restrict/secure access:
+The `bin/qmsk.rsync-ssh-command` script can be used as an `~/.ssh/authorized_keys` `command="..."` wrapper, and provides options to restrict/secure access:
 
-        command="/opt/qmsk-backup/bin/qmsk.backup-rsync --readonly --restrict-path=/foo" ssh-rsa ...
+        command="/opt/qmsk-backup/bin/qmsk.rsync-ssh-command --readonly --restrict-path=/foo" ssh-rsa ...
 
 
-***NOTE***: the current implementation is not exactly security-audited, the restrictions serve more to avoid mistakes, and do not protect against
-     determined misuse of your ssh key..
+***NOTE***: the current implementation is not exactly security-audited, the restrictions serve more to avoid mistakes, and do not protect against determined misuse of your ssh key...
 
 #### `--readonly`
 
@@ -90,16 +89,16 @@ The rsync source syntax also supports two forms of ZFS filesystems: `zfs:<pool>/
 The former will take a `zfs snapshot <pool>/<name>`, mount that, and rsync the contents of the ZFS root.
 The later will find the ZFS mount for the given path, take a ZFS snapshot, mount it, and rsync the contents of that path within the ZFS snapshot.
 
-This syntax is supported for both local rsync sources, as well as by the remote `qmsk.backup-rsync` wrapper.
+This syntax is supported for both local rsync sources, as well as by the remote `qmsk.rsync-ssh-command` wrapper.
 
 ### `rsync --link-dest` snapshot storage
 
-The `qmsk.backup-target` script can be used to manage incremental backups as a series of hardlinked filesystem trees over traditional filesystems like ext4.
+The `qmsk.backup-rsync` script can be used to manage incremental backups as a series of hardlinked filesystem trees over traditional filesystems like ext4.
 This uses `rsync --link-dest` internally to hardlink files between snapshots, and only store changed files on disk.
 
 #### `rsync --stats`
 
-The `qmsk.backup-target` will collect additional `snapshots/*.meta` JSON files containing the `start` and `end `time of the backup, and the rsync paths used:
+The `qmsk.backup-rsync` will collect additional `snapshots/*.meta` JSON files containing the `start` and `end `time of the backup, and the rsync paths used:
 
 ```json
 {
@@ -123,7 +122,7 @@ The `qmsk.backup-target` will collect additional `snapshots/*.meta` JSON files c
 }
 ```
 
-Use `qmsk.backup-target --no-backup --stats` to summarize this output:
+Use `qmsk.backup-rsync --no-backup --stats` to summarize this output:
 
 ```
 NAME               TIME       |    FILES /    TOTAL =       % |     SIZE /    TOTAL =       % |     SEND     RECV
@@ -183,4 +182,12 @@ This lists the disk usage of each snapshot in reverse order, such that it tells 
 ### zfs snapshot storage
 
 The `qmsk.backup-zfs` script can be used manage ZFS snapshots with retention intervals.
+
+The script has three modes of operation:
+
+* Using `--rsync-source` will first rsync from the remote source, and then create a local ZFS snapshot.
+* Using `--zfs-source` will use ZFS bookmarks to create and send a temporary snapshot from the remote source.
+  This relies on the remote source using the `pvl.zfs-ssh-command` wrapper script.
+* Otherwise, a local ZFS snapshot will be created without any remote sync.
+
 It also supports using rsync to backup remote filesystems onto the local ZFS filesystems before snapshotting.

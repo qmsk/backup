@@ -1,0 +1,154 @@
+#!/usr/bin/python3
+
+"""
+    rsync --server --sender wrapper for use with SSH authorized_keys command="...", with additional support for LVM snapshots.
+
+    Testing:
+        virtualenv opt && ./opt/bin/pip install -e
+
+        sudo SSH_ORIG_COMMAND='rsync --server --sender -ax . lvm:asdf:test' ./opt/bin/qmsk.backup-rsync -v
+
+        sudo rsync -e './opt/bin/qmsk.backup-rsync --debug --' -ax testing:lvm:asdf:test test/tmp"
+"""
+
+import logging
+import os
+import qmsk.args
+import qmsk.backup.rsync
+import qmsk.invoke
+import shlex
+
+from qmsk.backup import __version__
+from qmsk.backup import lvm
+
+log = logging.getLogger('qmsk.backup-rsync')
+
+def rsync_wrapper (args, command, server=False):
+    """
+        Wrap given rsync command, parsing options/path, determining source, and running rsync in the source.
+
+        Parses the command, the source path, and then executes rsync within the source path (which may be a special
+        pseudo-path with additional handling).
+
+            server      - assume rsync --server mode operation
+    """
+
+    # parse --sender command
+    try :
+        rsync_options, source_path = qmsk.backup.rsync.parse_sender_command(command)
+    except qmsk.backup.rsync.CommandError as error:
+        log.error("Invalid rsync command %r: %s", command, error)
+        return 2
+    
+    # parse source path
+    try :
+        rsync_source = qmsk.backup.rsync.parse_source(source_path,
+                restrict_paths      = args.restrict_path,
+                allow_remote        = args.allow_remote,
+                sudo                = args.sudo,
+                lvm_opts            = dict(
+                    size    = args.snapshot_size, 
+                    wait    = args.snapshot_wait,
+                    retry   = args.snapshot_retry,
+                ),
+            )
+
+    except qmsk.backup.rsync.SourceError as error:
+        log.error("Invalid rsync source: %r: %s", source_path, error)
+        return 2
+
+    # noop?
+    if args.noop:
+        log.info("noop: %r -> %r: execute(%r, %r)", path, source, rsync_options, srcdst)
+        return 0
+
+    # execute
+    try:
+        # run rsync within the source (may perform additional stuff like snapshot...)
+        rsync_source.rsync_sender(rsync_options)
+
+    except qmsk.invoke.InvokeError as error:
+        log.error("rsync failed: %s", error)
+        return error.exit
+    
+    else:
+        log.debug("rsync ok")
+
+    # ok
+    return 0
+
+def main (args):
+    """
+        Run, with full argv
+    """
+
+    parser = qmsk.args.parser(package='backup', module='rsync',
+            description = __doc__,
+            version     = __version__,
+    )
+
+    # options
+    parser.add_argument('-n', '--noop', action='store_true', default=False,
+            help="Parse command, but do not execute")
+
+    parser.add_argument('-R', '--readonly',   action='store_true', default=False,
+            help="Restrict to read/source mode")
+
+    parser.add_argument('-P', '--restrict-path', metavar='PATH', action='append',
+            help="Restrict to given path prefix(s)")
+
+    parser.add_argument('--sudo',             action='store_true',
+            help="Execute rsync under sudo")
+    
+    parser.add_argument('--allow-remote',     action='store_true', default=False,
+            help="Allow remote rsync sources")
+
+    # lvm options
+    parser.add_argument('-L', '--snapshot-size', metavar='SIZE', default=lvm.LVM_SNAPSHOT_SIZE,
+            help="create snapshot with given LV size (used to store writes during backup)")
+
+    parser.add_argument('--snapshot-wait', metavar='SECONDS', default=lvm.LVM_SNAPSHOT_WAIT, type=float,
+            help="wait for snapshot to settle after unmounting")
+
+    parser.add_argument('--snapshot-retry', metavar='RETRY', default=lvm.LVM_SNAPSHOT_RETRY, type=int,
+            help="retry snapshot removal by given iterations")
+
+    # rsync command
+    parser.add_argument('--ssh-command', metavar='CMD', default=os.environ.get('SSH_ORIGINAL_COMMAND'),
+            help="Rsync command to wrap")
+
+    parser.add_argument('rsync_command', metavar='RSYNC...', nargs='*',
+            help="Rsync command")
+
+    parser.set_defaults(
+        restrict_path   = [],
+    )
+
+    # parse
+    args = qmsk.args.parse(parser, args)
+    
+    # from args (as given by `rsync -e qmsk.backup-rsync`) -> 'qmsk.backup-rsync <host> (<command> ...)'
+    if args.ssh_command:
+        # from ssh authorized_keys command="..."
+        command_parts = shlex.split(args.ssh_command)
+
+    elif args.rsync_command:
+        host = args.rsync_command.pop(0)
+        command_parts = args.rsync_command
+
+        log.debug("host=%r, using command from args: %r", host, command_parts)
+    
+    else:
+        log.error("No rsync command given")
+        return 2
+
+    # run
+    try:
+        return rsync_wrapper(args, command_parts)
+
+    except Exception as error:
+        log.exception("Internal error: %s", error)
+        return 3
+
+if __name__ == '__main__':
+    qmsk.args.main(main)

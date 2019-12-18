@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 """
-    Manage ZFS snapshots from rsync sources.
+    Manage ZFS snapshots, with optional rsync or ZFS source.
 
     sudo ./opt/bin/qmsk.backup-zfs -v tank/backup/test \
             --rsync-source=lvm:test/test \
