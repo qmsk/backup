@@ -349,7 +349,7 @@ class Source:
     def __str__(self):
         return self.source
 
-    def stream_send(self, incremental=None, full_incremental=None, properties=False, replication_stream=None, snapshot=None, bookmark=None, purge_bookmark=None):
+    def stream_send(self, raw=None, incremental=None, full_incremental=None, properties=False, replication_stream=None, snapshot=None, bookmark=None, purge_bookmark=None):
         """
             Returns a context manager.
         """
@@ -360,6 +360,7 @@ class Source:
             name += '@' + snapshot
 
         return self.invoker.stream('zfs', ['send'] + qmsk.invoke.optargs(
+            '-w' if raw else None,
             '-R' if replication_stream else None,
             '-p' if properties else None,
             '-i' + str(incremental) if incremental else None,

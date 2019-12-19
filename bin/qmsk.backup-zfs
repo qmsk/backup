@@ -34,6 +34,7 @@ class ZFSTarget (BaseTarget):
     def config (cls, name,
             noop        = None,
             zfs_source      = None,
+            zfs_raw         = None,
             zfs_bookmark    = None,
             invoker_options = {},
             ssh_options     = {},
@@ -51,15 +52,17 @@ class ZFSTarget (BaseTarget):
                     invoker = qmsk.invoke.Invoker(**invoker_options),
                 ),
                 zfs_source      = zfs_source,
+                zfs_raw         = zfs_raw,
                 zfs_bookmark    = zfs_bookmark,
                 **opts
         )
 
-    def __init__ (self, zfs, zfs_source=None, zfs_bookmark=None, **opts):
+    def __init__ (self, zfs, zfs_source=None, zfs_raw=None, zfs_bookmark=None, **opts):
         super(ZFSTarget, self).__init__(**opts)
 
         self.zfs = zfs
         self.zfs_source = zfs_source
+        self.zfs_raw = zfs_raw
         self.zfs_bookmark = zfs_bookmark
 
     def __str__ (self):
@@ -162,6 +165,7 @@ class ZFSTarget (BaseTarget):
             send_bookmark = self.zfs_bookmark + ':' + snapshot_name
 
             with self.zfs_source.stream_send(
+                raw             = self.zfs_raw,
                 incremental     = '#' + incremental_bookmark if incremental_bookmark else None,
                 snapshot        = None, # create temporary snapshot
                 bookmark        = send_bookmark, # create bookmark for sent snapshot
@@ -311,6 +315,8 @@ def main (args):
     # ZFS send/recv
     parser.add_argument('--zfs-source', metavar='HOST:ZFS',
             help="ZFS send/recv from SSH remote or local pool")
+    parser.add_argument('--zfs-raw', action='store_true',
+            help="ZFS send --raw of encrypted dataset")
     parser.add_argument('--zfs-bookmark', metavar='BOOKMARK-PREFIX', default=ZFS_BOOKMARK,
             help="Sender bookmark prefix")
     parser.add_argument('--ssh-config', metavar='PATH')
@@ -336,6 +342,7 @@ def main (args):
                     rsync_source    = args.rsync_source,
                     rsync_options   = args.rsync_options,
                     zfs_source      = args.zfs_source,
+                    zfs_raw         = args.zfs_raw,
                     zfs_bookmark    = args.zfs_bookmark,
                     invoker_options = dict(
                         sudo            = args.sudo,
