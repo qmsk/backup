@@ -314,11 +314,11 @@ class Snapshot (object):
         """
 
         self.filesystem.zfs_read('send',
+            '--raw' if raw else None, # passed as first argument to allow whitelisting `sudo /usr/sbin/zfs send --raw *`
             '-R' if replication_stream else None,
             '-p' if properties else None,
             '-i' + str(incremental) if incremental else None,
             '-I' + str(full_incremental) if full_incremental else None,
-            '--raw' if raw else None,
             self,
             stdout=stdout,
         )
