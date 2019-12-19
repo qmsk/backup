@@ -305,7 +305,7 @@ class Snapshot (object):
     def release(self, tag):
         self.filesystem.zfs_write('release', tag, self)
 
-    def send(self, incremental=None, full_incremental=None, properties=False, replication_stream=None, stdout=True):
+    def send(self, incremental=None, full_incremental=None, properties=False, replication_stream=None, raw=None, stdout=True):
         """
             Write out ZFS contents of this snapshot to stdout.
 
@@ -318,6 +318,7 @@ class Snapshot (object):
             '-p' if properties else None,
             '-i' + str(incremental) if incremental else None,
             '-I' + str(full_incremental) if full_incremental else None,
+            '--raw' if raw else None,
             self,
             stdout=stdout,
         )

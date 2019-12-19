@@ -85,6 +85,7 @@ class Wrapper:
                 full_incremental    = full_incremental,
                 properties          = args.properties,
                 replication_stream  = args.replication,
+                raw                 = args.raw,
             )
 
             if args.bookmark:
@@ -105,6 +106,7 @@ class Wrapper:
         parser_send.add_argument('-I', dest='incremental_full', metavar='SNAPSHOT', help="Full incremental send of all snapshots from snapshot")
         parser_send.add_argument('-p', dest='properties', action='store_true', help="Send dataset properties")
         parser_send.add_argument('-R', dest='replication', action='store_true', help="Send replication stream")
+        parser_send.add_argument('-w', dest='raw', action='store_true', help="For encrypted datasets, send data exactly as it exists on disk")
         parser_send.add_argument('zfs', metavar='ZFS', help="Source ZFS filesystem, with optional @snapshot")
         parser_send.add_argument('--bookmark', metavar='BOOKMARK', help="Bookmark snapshot after send")
         parser_send.add_argument('--purge-bookmark', metavar='BOOKMARK', help="Destroy bookmark after snapshot send")
