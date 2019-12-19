@@ -26,14 +26,14 @@ class InvokeError (Exception):
 def invoke (cmd, args, stdin=None, stdout=None, quiet=False, setenv=None, sudo=False, encoding=ENCODING):
     """
         Invoke a command directly.
-       
+
         cmd:string
             Command executable to invoke
 
         args:[string]
             Arguments for command, not including executable name (i.e. argv[1:])
 
-        stdin:      
+        stdin:
             None:       empty pipe on stdin (EOF)
             False:      /dev/null
             True:       passthrough stdin
@@ -47,7 +47,7 @@ def invoke (cmd, args, stdin=None, stdout=None, quiet=False, setenv=None, sudo=F
 
         quiet:bool
             Supress log.warning() with stderr on success.
-        
+
         setenv:{str:str}
             Run with expanded environment
 
@@ -63,7 +63,7 @@ def invoke (cmd, args, stdin=None, stdout=None, quiet=False, setenv=None, sudo=F
 
         Returns stdout str.
     """
-    
+
     log.debug("{sudo}{cmd} {args}".format(sudo=('sudo ' if sudo else ''), cmd=cmd, args=' '.join(args)))
 
     if stdin is True:
@@ -125,7 +125,7 @@ def invoke (cmd, args, stdin=None, stdout=None, quiet=False, setenv=None, sudo=F
         raise InvokeError(cmd, p.returncode, stderr)
     elif stderr and not quiet:
         log.warning("%s: %s", cmd, stderr)
-    
+
     if stdout is None:
         return None
     elif encoding:
@@ -219,7 +219,7 @@ def command (cmd, *args, **opts):
 
         Return stdout. See invoke()
     """
-    
+
     log.debug("{cmd} {opts} {args}".format(cmd=cmd, args=args, opts=opts))
 
     # invoke
@@ -238,7 +238,7 @@ def stream (cmd, args, sudo=None, stdin=None, encoding=ENCODING):
 
         XXX: deadlock on stderr?
     """
-    
+
     log.debug("{sudo}{cmd} {args}".format(sudo=('sudo ' if sudo else ''), cmd=cmd, args=' '.join(args)))
 
     argv = [cmd] + args
@@ -247,29 +247,43 @@ def stream (cmd, args, sudo=None, stdin=None, encoding=ENCODING):
         argv = [SUDO] + argv
 
     p = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    error = None
 
     try:
         yield p.stdout
-    except Exception as error:
-        log.debug("kill on error while streaming %s: %s", cmd, error)
+
+    except Exception as ex:
+        error = ex # re-raise after logging stderr
+
+        log.debug("kill on error while streaming %s: %s", cmd, ex)
 
         p.kill()
 
-        raise
-    else:
+    finally:
         status = p.wait()
-        stderr = p.stderr.read()
-    
-        if stderr:
-            stderr = stderr.decode(encoding or 'ascii', errors='replace')
 
-        log.debug("stream %s: status=%d stderr=%r", cmd, status, stderr)
+    # collect any output
+    stderr = p.stderr.read()
 
-        if status:
-            # failed
-            raise InvokeError(cmd, status, stderr)
-        elif stderr:
-            log.warning("%s: %s", cmd, stderr)
+    if stderr:
+        stderr = stderr.decode(encoding or 'ascii', errors='replace')
+
+    log.debug("stream %s: status=%d stderr=%r", cmd, status, stderr)
+
+    if status:
+        log.warning("%s: %s", cmd, stderr)
+
+    if error:
+        # with-block failed
+        raise error
+
+    elif status:
+        # command failed
+        raise InvokeError(cmd, status, stderr)
+
+    elif stderr:
+        log.debug("%s: %s", cmd, stderr)
+
 
 class Invoker:
     def __init__(self, sudo=None):
@@ -277,11 +291,11 @@ class Invoker:
 
     def invoke(self, cmd, args, **opts):
         return invoke(cmd, args, sudo=self.sudo, **opts)
-    
+
     def stream(self, cmd, args, **opts):
         return stream(cmd, args, sudo=self.sudo, **opts)
 
- 
+
 SSH = '/usr/bin/ssh'
 
 class SSHInvoker:
