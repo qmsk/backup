@@ -24,6 +24,9 @@ import shlex
 
 log = logging.getLogger('qmsk.backup-ssh-command')
 
+class Error (Exception):
+    pass
+
 @contextlib.contextmanager
 def wrap_context(value):
     """
@@ -37,9 +40,10 @@ class Wrapper:
         Command wrapper
     """
 
-    def __init__(self, noop=None, sudo=None):
+    def __init__(self, noop=None, sudo=None, restrict_raw=None):
         self.noop = noop
         self.sudo = sudo
+        self.restrict_raw = restrict_raw
 
     def zfs_send(self, args):
         target = args.zfs
@@ -49,6 +53,9 @@ class Wrapper:
         else:
             zfs_name = target
             snapshot_name = None
+
+        if self.restrict_raw and not args.raw:
+            raise Error("Only --raw sends are allowed")
 
         zfs = qmsk.backup.zfs.open(zfs_name,
             noop    = self.noop,
@@ -151,6 +158,9 @@ def main (args):
     parser.add_argument('--sudo',             action='store_true',
             help="Execute privileges commands with sudo")
 
+    parser.add_argument('--restrict-raw', action='store_true',
+            help="Only allow raw snapshot sends")
+
     parser.set_defaults(
 
     )
@@ -172,11 +182,16 @@ def main (args):
     # run
     try:
         wrapper = Wrapper(
-            noop        = args.noop,
-            sudo        = args.sudo,
+            noop            = args.noop,
+            sudo            = args.sudo,
+            restrict_raw    = args.restrict_raw,
         )
 
         return wrapper(command_parts[0], command_parts[1:])
+
+    except Error as error:
+        log.error("%s", error)
+        return 2
 
     except Exception as error:
         log.exception("Internal error: %s", error)
