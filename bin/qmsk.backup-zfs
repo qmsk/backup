@@ -34,6 +34,7 @@ class ZFSTarget (BaseTarget):
     def config (cls, name,
             noop        = None,
             zfs_source      = None,
+            zfs_raw         = None,
             zfs_bookmark    = None,
             invoker_options = {},
             ssh_options     = {},
@@ -51,15 +52,17 @@ class ZFSTarget (BaseTarget):
                     invoker = qmsk.invoke.Invoker(**invoker_options),
                 ),
                 zfs_source      = zfs_source,
+                zfs_raw         = zfs_raw,
                 zfs_bookmark    = zfs_bookmark,
                 **opts
         )
 
-    def __init__ (self, zfs, zfs_source=None, zfs_bookmark=None, **opts):
+    def __init__ (self, zfs, zfs_source=None, zfs_raw=None, zfs_bookmark=None, **opts):
         super(ZFSTarget, self).__init__(**opts)
 
         self.zfs = zfs
         self.zfs_source = zfs_source
+        self.zfs_raw = zfs_raw
         self.zfs_bookmark = zfs_bookmark
 
     def __str__ (self):
@@ -92,12 +95,19 @@ class ZFSTarget (BaseTarget):
         log.debug("%s setup: get_error=%s, zfs_source=%s", self, get_error, zfs_source)
 
         if get_error:
-            if create:
-                # assume error is caused by missing fs
+            if not create:
+                raise get_error
+
+            elif self.rsync_source:
+                # create for mount/rsync
                 self.create(verify_source)
 
+            elif self.zfs_source:
+                # will be created by zfs recv
+                pass
+
             else:
-                raise get_error
+                raise Error("{zfs}: local dataset is missing".format(zfs=self.zfs))
 
         elif verify_source and zfs_source != verify_source:
             if force_source:
@@ -124,7 +134,7 @@ class ZFSTarget (BaseTarget):
 
         return mountpoint
 
-    def snapshot (self, now):
+    def snapshot (self, now, create=False):
         """
             Create new ZFS snapshot for given timestamp.
 
@@ -153,8 +163,11 @@ class ZFSTarget (BaseTarget):
             try:
                 local_snapshot = self.zfs.last_snapshot().name
             except qmsk.backup.zfs.ZFSError as error:
-                log.warning("%s: requesting full send for local ZFS that is assumed to be missing: %s", self, error)
-                incremental_bookmark = None
+                if create:
+                    log.warning("%s: requesting full send for local ZFS that is assumed to be missing: %s", self, error)
+                    incremental_bookmark = None
+                else:
+                    raise Error("{zfs}: local ZFS is missing, use --setup-create".format(zfs=self.zfs))
             else:
                 incremental_bookmark = self.zfs_bookmark + ':' + local_snapshot
 
@@ -162,13 +175,21 @@ class ZFSTarget (BaseTarget):
             send_bookmark = self.zfs_bookmark + ':' + snapshot_name
 
             with self.zfs_source.stream_send(
+                raw             = self.zfs_raw,
                 incremental     = '#' + incremental_bookmark if incremental_bookmark else None,
                 snapshot        = None, # create temporary snapshot
                 bookmark        = send_bookmark, # create bookmark for sent snapshot
                 purge_bookmark  = incremental_bookmark, # destroy bookmark for incremental snapshot
             ) as stream:
                 # create new snapshot with desired name
-                snapshot = self.zfs.receive(snapshot_name, force=True, stdin=stream)
+                # implicitly creates dataset if missing
+                snapshot = self.zfs.receive(snapshot_name,
+                    force       = True,
+                    properties  = {
+                        'qmsk-backup:source': str(self.zfs_source),
+                    },
+                    stdin       = stream,
+                )
 
             # set properties
             snapshot.set('qmsk-backup:snapshot', snapshot_name)
@@ -194,7 +215,7 @@ class ZFSTarget (BaseTarget):
 
         snapshot.hold(interval_hold)
 
-    def backup (self):
+    def backup (self, create=None):
         """
             Run backup, managing snapshots.
         """
@@ -204,7 +225,7 @@ class ZFSTarget (BaseTarget):
 
         log.info("%s: backup %s", self, now)
 
-        snapshot = self.snapshot(now)
+        snapshot = self.snapshot(now, create=create)
 
         # manage intervals
         for interval in self.intervals:
@@ -311,6 +332,8 @@ def main (args):
     # ZFS send/recv
     parser.add_argument('--zfs-source', metavar='HOST:ZFS',
             help="ZFS send/recv from SSH remote or local pool")
+    parser.add_argument('--zfs-raw', action='store_true',
+            help="ZFS send --raw of encrypted dataset")
     parser.add_argument('--zfs-bookmark', metavar='BOOKMARK-PREFIX', default=ZFS_BOOKMARK,
             help="Sender bookmark prefix")
     parser.add_argument('--ssh-config', metavar='PATH')
@@ -336,6 +359,7 @@ def main (args):
                     rsync_source    = args.rsync_source,
                     rsync_options   = args.rsync_options,
                     zfs_source      = args.zfs_source,
+                    zfs_raw         = args.zfs_raw,
                     zfs_bookmark    = args.zfs_bookmark,
                     invoker_options = dict(
                         sudo            = args.sudo,
@@ -366,7 +390,9 @@ def main (args):
             )
 
             if not args.skip_backup:
-                target.backup()
+                target.backup(
+                        create          = args.setup_create,
+                )
 
             # purge intervals
             if args.purge:

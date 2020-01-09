@@ -233,16 +233,18 @@ class Filesystem (object):
     def destroy_bookmark(self, bookmark):
         self.zfs_write('destroy', '{filesystem}#{bookmark}'.format(filesystem=self.name, bookmark=bookmark))
 
-    def receive(self, snapshot_name=None, force=None, stdin=True):
+    def receive(self, snapshot_name=None, *, force=None, properties={}, stdin=True):
         if snapshot_name:
             target = '{zfs}@{snapshot}'.format(zfs=self, snapshot=snapshot_name)
         else:
             target = self
 
+        options = ['-o{property}={value}'.format(property=key, value=value) for key, value in properties.items() if value is not None]
+
         # TODO: parse -v output to determine the received snapshot name?
         #   receiving full stream of test1/test@1 into test2/backup/test@1
         #   received 42,5KB stream in 1 seconds (42,5KB/sec)
-        self.zfs_write('receive', '-F' if force else None, target, stdin=stdin)
+        self.zfs_write('receive', '-F' if force else None, *options, target, stdin=stdin)
 
         if snapshot_name:
             return Snapshot(self, snapshot_name)
@@ -305,7 +307,7 @@ class Snapshot (object):
     def release(self, tag):
         self.filesystem.zfs_write('release', tag, self)
 
-    def send(self, incremental=None, full_incremental=None, properties=False, replication_stream=None, stdout=True):
+    def send(self, incremental=None, full_incremental=None, properties=False, replication_stream=None, raw=None, stdout=True):
         """
             Write out ZFS contents of this snapshot to stdout.
 
@@ -314,6 +316,7 @@ class Snapshot (object):
         """
 
         self.filesystem.zfs_read('send',
+            '--raw' if raw else None, # passed as first argument to allow whitelisting `sudo /usr/sbin/zfs send --raw *`
             '-R' if replication_stream else None,
             '-p' if properties else None,
             '-i' + str(incremental) if incremental else None,
@@ -348,7 +351,7 @@ class Source:
     def __str__(self):
         return self.source
 
-    def stream_send(self, incremental=None, full_incremental=None, properties=False, replication_stream=None, snapshot=None, bookmark=None, purge_bookmark=None):
+    def stream_send(self, raw=None, incremental=None, full_incremental=None, properties=False, replication_stream=None, snapshot=None, bookmark=None, purge_bookmark=None):
         """
             Returns a context manager.
         """
@@ -359,6 +362,7 @@ class Source:
             name += '@' + snapshot
 
         return self.invoker.stream('zfs', ['send'] + qmsk.invoke.optargs(
+            '-w' if raw else None,
             '-R' if replication_stream else None,
             '-p' if properties else None,
             '-i' + str(incremental) if incremental else None,

@@ -16,6 +16,7 @@ from qmsk.backup import __version__
 
 import argparse
 import contextlib
+import fnmatch
 import logging
 import os.path
 import qmsk.args
@@ -23,6 +24,9 @@ import qmsk.backup.zfs
 import shlex
 
 log = logging.getLogger('qmsk.backup-ssh-command')
+
+class Error (Exception):
+    pass
 
 @contextlib.contextmanager
 def wrap_context(value):
@@ -37,9 +41,11 @@ class Wrapper:
         Command wrapper
     """
 
-    def __init__(self, noop=None, sudo=None):
+    def __init__(self, noop=None, sudo=None, restrict_raw=None, restrict_glob=None):
         self.noop = noop
         self.sudo = sudo
+        self.restrict_raw = restrict_raw
+        self.restrict_glob = restrict_glob
 
     def zfs_send(self, args):
         target = args.zfs
@@ -49,6 +55,12 @@ class Wrapper:
         else:
             zfs_name = target
             snapshot_name = None
+
+        if self.restrict_raw and not args.raw:
+            raise Error("Only --raw sends are allowed")
+
+        if self.restrict_glob and not any(fnmatch.fnmatch(zfs_name, pattern) for pattern in self.restrict_glob):
+            raise Error("Restricted send source: {name}".format(name=zfs_name))
 
         zfs = qmsk.backup.zfs.open(zfs_name,
             noop    = self.noop,
@@ -85,6 +97,7 @@ class Wrapper:
                 full_incremental    = full_incremental,
                 properties          = args.properties,
                 replication_stream  = args.replication,
+                raw                 = args.raw,
             )
 
             if args.bookmark:
@@ -105,6 +118,7 @@ class Wrapper:
         parser_send.add_argument('-I', dest='incremental_full', metavar='SNAPSHOT', help="Full incremental send of all snapshots from snapshot")
         parser_send.add_argument('-p', dest='properties', action='store_true', help="Send dataset properties")
         parser_send.add_argument('-R', dest='replication', action='store_true', help="Send replication stream")
+        parser_send.add_argument('-w', dest='raw', action='store_true', help="For encrypted datasets, send data exactly as it exists on disk")
         parser_send.add_argument('zfs', metavar='ZFS', help="Source ZFS filesystem, with optional @snapshot")
         parser_send.add_argument('--bookmark', metavar='BOOKMARK', help="Bookmark snapshot after send")
         parser_send.add_argument('--purge-bookmark', metavar='BOOKMARK', help="Destroy bookmark after snapshot send")
@@ -149,8 +163,14 @@ def main (args):
     parser.add_argument('--sudo',             action='store_true',
             help="Execute privileges commands with sudo")
 
-    parser.set_defaults(
+    parser.add_argument('--restrict-glob', action='append',
+            help="Restrict to datasets matching glob patterns")
 
+    parser.add_argument('--restrict-raw', action='store_true',
+            help="Only allow raw snapshot sends")
+
+    parser.set_defaults(
+        restrict_glob = [],
     )
 
     # parse
@@ -170,11 +190,17 @@ def main (args):
     # run
     try:
         wrapper = Wrapper(
-            noop        = args.noop,
-            sudo        = args.sudo,
+            noop            = args.noop,
+            sudo            = args.sudo,
+            restrict_raw    = args.restrict_raw,
+            restrict_glob   = args.restrict_glob,
         )
 
         return wrapper(command_parts[0], command_parts[1:])
+
+    except Error as error:
+        log.error("%s", error)
+        return 2
 
     except Exception as error:
         log.exception("Internal error: %s", error)
