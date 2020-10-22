@@ -208,28 +208,52 @@ class Source (object):
         self.sudo = sudo
 
     @contextlib.contextmanager
-    def mount(self):
+    def mount_snapshot (self):
         """
-            Return local filesystem path for source.
+            Return local filesystem path for rsync source.
         """
 
         yield self.path
 
-    def rsync_sender (self, options):
+    @contextlib.contextmanager
+    def mount_restore (self):
         """
-            Run with --server --sender options, passing through stdin/stdout.
+            Return local filesystem path for rsync dest.
         """
 
-        with self.mount() as path:
+        yield self.path
+
+    def rsync_server (self, options):
+        """
+            Run to restore path in --server mode, passing through stdin/stdout.
+        """
+
+        with self.mount_restore() as path:
+            return rsync_server(options, ['.', path], sudo=self.sudo)
+
+    def rsync_sender (self, options):
+        """
+            Run from snapshot path in --server --sender mode, passing through stdin/stdout.
+        """
+
+        with self.mount_snapshot() as path:
             return rsync_server(options, ['.', path], sudo=self.sudo)
 
     def rsync (self, options, dest):
         """
-            Run with the given destination, returning optional stats dict.
+            Run from snapshot to given destination, returning optional stats dict.
         """
 
-        with self.mount() as path:
+        with self.mount_snapshot() as path:
             return rsync(options, [path, dest], sudo=self.sudo)
+
+    def rsync_restore (self, options, dest):
+        """
+            Run from given destination to restore path, returning optional stats dict.
+        """
+
+        with self.mount_restore() as path:
+            return rsync(options, [dest, path], sudo=self.sudo)
 
     def __str__ (self):
         return self.path
@@ -257,7 +281,7 @@ class LVMSource(Source):
         self.lvm_opts = lvm_opts
 
     @contextlib.contextmanager
-    def mount (self):
+    def mount_snapshot (self):
         """
             Mount LVM snapshot of volume
         """
@@ -278,6 +302,14 @@ class LVMSource(Source):
                     sudo        = self.sudo,
             ) as mountpoint:
                 yield mountpoint.path + '/' + self.path
+
+    @contextlib.contextmanager
+    def mount_restore (self):
+        """
+            Return local filesystem path for rsync dest.
+        """
+
+        raise NotImplementedError()
 
     def __str__ (self):
         return 'lvm:{volume}'.format(volume=self.lvm_volume)
@@ -309,7 +341,7 @@ class ZFSSource(Source):
         })
 
     @contextlib.contextmanager
-    def mount (self):
+    def mount_snapshot (self):
         """
             Mount ZFS snapshot of volume.
         """
@@ -325,6 +357,14 @@ class ZFSSource(Source):
                     sudo        = self.sudo,
             ) as mountpoint:
                 yield mountpoint.path + '/' + self.path
+
+    @contextlib.contextmanager
+    def mount_restore (self):
+        """
+            Return local filesystem path for rsync dest.
+        """
+
+        raise NotImplementedError()
 
     def __str__ (self):
         return 'zfs:{zfs}'.format(zfs=self.zfs)
