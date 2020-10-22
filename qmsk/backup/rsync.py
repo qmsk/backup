@@ -309,7 +309,7 @@ class LVMSource(Source):
             Return local filesystem path for rsync dest.
         """
 
-        raise NotImplementedError()
+        raise NotImplementedError("No restore support for lvm sources")
 
     def __str__ (self):
         return 'lvm:{volume}'.format(volume=self.lvm_volume)
@@ -364,7 +364,7 @@ class ZFSSource(Source):
             Return local filesystem path for rsync dest.
         """
 
-        raise NotImplementedError()
+        raise NotImplementedError("No restore support for zfs sources")
 
     def __str__ (self):
         return 'zfs:{zfs}'.format(zfs=self.zfs)
