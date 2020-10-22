@@ -14,12 +14,12 @@ class Interval:
         Manage snapshot retention over time intervals using strftime formatting.
 
         An interval link is created from the snapshot's datetime.strftime() using the given STRFTIME format, unless one already exists.
-        
+
         When purging, the LIMIT most recent interval links are retained, and the older ones removed. Snapshots with no interval links remaining are also removed. The LIMIT@ part may also be omitted for infinite retention.
 
         The resulting timestamp string is used as a filesystem name, and cannot contain any / characters.
     """
-    
+
     # XXX:  can't use [LIMIT@] due to argparse bug
     #       https://bugs.python.org/issue11874
     METAVAR = 'LIMIT@NAME:STRFTIME'
@@ -87,7 +87,7 @@ class Interval:
         """
 
         return datetime.datetime.strptime(value, self.strftime)
-    
+
     def match(self, value):
         """
             Test if given value is a valid format() output.
@@ -99,7 +99,7 @@ class Interval:
             return False
         else:
             return True
- 
+
 class BaseTarget:
     # rsync options, in invoke.optargs format
     RSYNC_OPTIONS = {
@@ -109,14 +109,15 @@ class BaseTarget:
         'numeric-ids':      True,
         'delete':           True,
     }
-    
+
     SNAPSHOT_STRFTIME = '%Y%m%d-%H%M%S'
-    
+
     @classmethod
     def config(cls,
             rsync_source=None,
             rsync_options=None,
             sudo=None,
+            noop=None,
             **opts
     ):
         """
@@ -130,7 +131,7 @@ class BaseTarget:
                 )
             except qmsk.backup.rsync.SourceError as error:
                 raise Error("--source=%s: %s", source, error)
-       
+
         _rsync_options = dict(cls.RSYNC_OPTIONS)
 
         if rsync_options:
@@ -139,7 +140,7 @@ class BaseTarget:
                     opt, value = opt.split('=', 1)
                 else:
                     value = True
-                
+
                 # update
                 if value is True:
                     _rsync_options[opt] = value
@@ -151,6 +152,7 @@ class BaseTarget:
         return cls(
                 rsync_source    = rsync_source,
                 rsync_options   = _rsync_options,
+                noop = noop,
                 **opts
         )
 
@@ -158,11 +160,13 @@ class BaseTarget:
             rsync_source    = None,
             rsync_options   = [],
             intervals       = [],
+            noop            = None,
     ):
         self.rsync_source = rsync_source
         self.rsync_options = rsync_options
         self.intervals = intervals
-    
+        self.noop = noop
+
     def setup (self, create=False):
         abstract
 
@@ -181,16 +185,19 @@ class BaseTarget:
 
             Raises qmsk.backup.rsync.Error
         """
-        
+
         rsync_options = dict(self.rsync_options)
-        
+
         if link_dest:
             # rsync links absolute paths..
             rsync_options['link-dest'] = os.path.abspath(link_dest)
 
         # use stats
         rsync_options['stats'] = True
- 
+
+        if self.noop:
+            rsync_options['dry-run'] = True
+
         opts = qmsk.invoke.optargs(**rsync_options)
 
         try:
@@ -212,20 +219,19 @@ class BaseTarget:
 
             Raises rsync.RsyncError or Error.
         """
-    
+
         abstract
 
     def backup (self):
         """
             Create snapshot with rsync, link intervals.
         """
-        
+
         abstract
 
     def purge(self):
         """
             Unlink intervals per limits, purge any unlinked snapshots.
         """
- 
-        abstract
 
+        abstract

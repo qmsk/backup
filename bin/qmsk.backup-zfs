@@ -32,7 +32,7 @@ class ZFSTarget (BaseTarget):
 
     @classmethod
     def config (cls, name,
-            noop        = None,
+            noop            = None,
             zfs_source      = None,
             zfs_raw         = None,
             zfs_bookmark    = None,
@@ -54,6 +54,7 @@ class ZFSTarget (BaseTarget):
                 zfs_source      = zfs_source,
                 zfs_raw         = zfs_raw,
                 zfs_bookmark    = zfs_bookmark,
+                noop            = noop,
                 **opts
         )
 
