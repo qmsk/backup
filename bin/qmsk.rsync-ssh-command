@@ -41,7 +41,11 @@ def rsync_wrapper (args, command, server=False):
         return 2
 
     if args.readonly and not sender:
-        log.error("Invalid rsync command %r: restricted to --sender mode", command)
+        log.error("Invalid rsync command %r: --readonly restricts to rsync --server --sender mode only", command)
+        return 2
+
+    if not sender and not args.allow_restore:
+        log.error("Invalid rsync command %r: rsync --server mode is restricted without --allow-restore", command)
         return 2
 
     # parse source path
@@ -111,6 +115,9 @@ def main (args):
 
     parser.add_argument('--allow-remote',     action='store_true', default=False,
             help="Allow remote rsync sources")
+
+    parser.add_argument('--allow-restore',    action='store_true', default=False,
+            help="Allow rsync --server write mode")
 
     # lvm options
     parser.add_argument('-L', '--snapshot-size', metavar='SIZE', default=lvm.LVM_SNAPSHOT_SIZE,
