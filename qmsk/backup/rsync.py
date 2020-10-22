@@ -371,7 +371,7 @@ class ZFSSource(Source):
             Return local filesystem path for rsync dest.
         """
 
-        raise NotImplementedError("No restore support for zfs sources")
+        raise SourceError("No restore support for zfs sources")
 
     def __str__ (self):
         return 'zfs:{zfs}'.format(zfs=self.zfs)
