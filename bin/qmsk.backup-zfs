@@ -238,8 +238,8 @@ class ZFSTarget (BaseTarget):
         """
 
         if self.rsync_source:
-            # rsync to local ZFS destination, and then create snapshot
-            dest_path = self.mount()
+            # rsync directory contents from local ZFS destination
+            dest_path = self.mount() + '/'
 
             log.info("%s: rsync %s -> %s", self, dest_path, self.rsync_source)
 
