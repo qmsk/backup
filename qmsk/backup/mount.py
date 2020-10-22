@@ -84,7 +84,7 @@ class Mount (object) :
         """
             Test if the given mountpoint is mounted.
         """
-        
+
         # workaround http://bugs.python.org/issue2466
         if os.path.exists(self.mnt) and not os.path.exists(os.path.join(self.mnt, '.')) :
             # this is a sign of a mountpoint that we do not have access to
@@ -131,7 +131,7 @@ def mount (dev, mnt=None, name_hint='tmp', **kwargs) :
 
     else :
         tmpdir = None
-        
+
     log.debug("mount: %s -> %s", dev, mnt)
 
     # with tempdir
@@ -170,7 +170,7 @@ def mounts():
 
     for line in open('/proc/mounts'):
         parts = line.split()
-        
+
         dev = parts[0]
         mount = parts[1]
         fstype = parts[2]
@@ -179,7 +179,7 @@ def mounts():
 
 def find (path):
     """
-        Find mount point for given file path.
+        Find mount for given file path.
 
         Returns (device path, mount path, fstype, file path)
     """
@@ -192,7 +192,7 @@ def find (path):
         name = os.path.join(basename, name)
 
         log.debug("%s / %s", path, name)
-        
+
     # find mount
     for device, mount, fstype in mounts():
         if mount == path:
