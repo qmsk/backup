@@ -135,6 +135,20 @@ class ZFSTarget (BaseTarget):
 
         return mountpoint
 
+    def mount_snapshot(self, snapshot):
+        """
+            Return backup source path.
+        """
+
+        zfs_snapshot = self.zfs.snapshots[snapshot]
+
+        mountpoint = zfs_snapshot.mountpoint
+
+        if not mountpoint:
+            raise Error("ZFS destination is not mounted: %s", self.zfs)
+
+        return mountpoint
+
     def snapshot (self, now, create=False):
         """
             Create new ZFS snapshot for given timestamp.
@@ -232,18 +246,23 @@ class ZFSTarget (BaseTarget):
         for interval in self.intervals:
             self.backup_interval(interval, now, snapshot)
 
-    def restore (self, rsync_options={}):
+    def restore (self, snapshot=None, rsync_options={}):
         """
             Restore from backup to rsync source.
         """
 
+        if snapshot:
+            path = self.mount_snapshot(snapshot)
+        else:
+            path = self.mount()
+
         if self.rsync_source:
             # rsync directory contents from local ZFS destination
-            dest_path = self.mount() + '/'
+            path = path + '/'
 
-            log.info("%s: rsync %s -> %s", self, dest_path, self.rsync_source)
+            log.info("%s: rsync %s -> %s", self, path, self.rsync_source)
 
-            rsync_stats = self.rsync_restore(dest_path, **rsync_options)
+            rsync_stats = self.rsync_restore(path, **rsync_options)
 
         elif self.zfs_source:
             raise Error("ZFS restore is not supported for {zfs_source} source".format(zfs_source=self.zfs_source))
@@ -370,6 +389,8 @@ def main (args):
 
     parser.add_argument('--restore', action='store_true',
             help="Restore from backup")
+    parser.add_argument('--restore-snapshot', metavar='SNAPSHOT',
+            help="Restore from ZFS snapshot")
     parser.add_argument('--restore-verbose', action='store_true',
             help="Verbose output from restore")
     parser.add_argument('--restore-delete', action='store_true',
@@ -418,6 +439,8 @@ def main (args):
 
             if args.restore:
                 target.restore(
+                    snapshot    = args.restore_snapshot,
+
                     rsync_options = dict(
                         verbose     = args.restore_verbose,
                         delete      = args.restore_delete,
