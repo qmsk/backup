@@ -149,6 +149,17 @@ def print_stats(rows):
 
 def rsync (options, paths, sudo=False):
     """
+        Run rsync, passing through stdout.
+
+        Raises qmsk.invoke.InvokeError
+    """
+
+    log.info("rsync %s %s", ' '.join(options), ' '.join(paths))
+
+    stdout = qmsk.invoke.invoke(RSYNC, options + paths, sudo=sudo, stdout=True)
+
+def rsync_stats (options, paths, sudo=False):
+    """
         Run rsync.
 
         Returns a stats dict if there is any valid --stats output, None otherwise.
@@ -245,7 +256,7 @@ class Source (object):
         """
 
         with self.mount_snapshot() as path:
-            return rsync(options, [path, dest], sudo=self.sudo)
+            return rsync_stats(options, [path, dest], sudo=self.sudo)
 
     def rsync_restore (self, options, dest):
         """

@@ -232,7 +232,7 @@ class ZFSTarget (BaseTarget):
         for interval in self.intervals:
             self.backup_interval(interval, now, snapshot)
 
-    def restore (self):
+    def restore (self, rsync_options={}):
         """
             Restore from backup to rsync source.
         """
@@ -243,7 +243,7 @@ class ZFSTarget (BaseTarget):
 
             log.info("%s: rsync %s -> %s", self, dest_path, self.rsync_source)
 
-            rsync_stats = self.rsync_restore(dest_path)
+            rsync_stats = self.rsync_restore(dest_path, **rsync_options)
 
         elif self.zfs_source:
             raise Error("ZFS restore is not supported for {zfs_source} source".format(zfs_source=self.zfs_source))
@@ -370,6 +370,10 @@ def main (args):
 
     parser.add_argument('--restore', action='store_true',
             help="Restore from backup")
+    parser.add_argument('--restore-verbose', action='store_true',
+            help="Verbose output from restore")
+    parser.add_argument('--restore-delete', action='store_true',
+            help="Delete any extra files present on the source when restoring")
 
     parser.add_argument('target', metavar='ZFS', nargs='+',
             help="ZFS target")
@@ -413,7 +417,12 @@ def main (args):
             )
 
             if args.restore:
-                target.restore()
+                target.restore(
+                    rsync_options = dict(
+                        verbose     = args.restore_verbose,
+                        delete      = args.restore_delete,
+                    ),
+                )
             else:
                 if not args.skip_backup:
                     target.backup(

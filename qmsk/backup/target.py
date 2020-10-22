@@ -211,19 +211,15 @@ class BaseTarget:
         else:
             return stats
 
-    def rsync_restore (self, path):
+    def rsync_restore (self, path, **options):
         """
             rsync given path to source.
-
-            Return the --stats dict, or None if unparseable.
 
             Raises qmsk.backup.rsync.Error
         """
 
         rsync_options = dict(self.rsync_options)
-
-        # use stats
-        rsync_options['stats'] = True
+        rsync_options.update(options)
 
         if self.noop:
             rsync_options['dry-run'] = True
@@ -231,7 +227,6 @@ class BaseTarget:
         opts = qmsk.invoke.optargs(**rsync_options)
 
         try:
-            # run the rsync.RSyncServer; None as a placeholder will get replaced with the actual source
             stats = self.rsync_source.rsync_restore(opts, path)
 
         except qmsk.backup.rsync.Error as error:
