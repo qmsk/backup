@@ -416,8 +416,8 @@ def parse_server_command(command):
 
         Returns:
             options:    list of --options and -opts from parse_options
-            source:     source path if sender, or None
-            dest:       dest path if receiver, or None
+            path:       source path if sender, dest path if server
+            sender:     True if sender, False if server
 
         Raises:
             CommandError
@@ -429,50 +429,25 @@ def parse_server_command(command):
     if cmd.split('/')[-1] != 'rsync':
         raise CommandError("Invalid command: {cmd}".format(cmd=cmd))
 
+    if not '--server' in options:
+        raise CommandError("Missing --server")
+
     if len(args) != 2:
         raise CommandError("Invalid source/destination paths")
 
     if args[0] != '.':
         raise CommandError("Invalid source-path for server")
 
+    # parse real source
     path = args[1]
 
-    # parse real source
-    if not '--server' in options:
-        raise CommandError("Missing --server")
-
-    elif not '--sender' in options:
-        # write
-        source = None
-        dest = path
-
-    else:
-        # read
-        source = path
-        dest = None
+    if '--sender' in options:
+        sender = True
+    else :
+        sender = False
 
     # ok
-    return options, source, dest
-
-def parse_sender_command (command):
-    """
-        Parse rsync's internal --server --sender command used when reading over SSH.
-
-        Returns:
-            options:    list of --options and -opts from parse_options
-            source:     source path
-
-        Raises:
-            CommandError
-
-    """
-
-    options, source, dest = parse_server_command(command)
-
-    if dest:
-        raise CommandError("Missing --sender")
-    else:
-        return options, source
+    return options, path, sender
 
 def parse_source (path, restrict_paths=None, allow_remote=True, sudo=None, lvm_opts={}):
     """
