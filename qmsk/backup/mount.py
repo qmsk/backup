@@ -5,8 +5,10 @@
 from qmsk.invoke import invoke, optargs, command
 
 import contextlib
-import os, os.path
 import logging
+import os
+import os.path
+import stat
 import tempfile
 
 log = logging.getLogger('qmsk.backup.mount')
@@ -201,3 +203,29 @@ def find (path):
         raise FileNotFoundError(path)
 
     return device, mount, fstype, name
+
+def find_dev(dev):
+    """
+        Find mount for given (major, minor) device.
+
+        Returns (device path, mount path, fstype).
+
+        Raises FileNotFoundError
+    """
+
+    for device, mount, fstype in mounts():
+        if not device.startswith('/'):
+            continue
+
+        try:
+            st = os.stat(device)
+        except FileNotFoundError:
+            continue
+
+        if not stat.S_ISBLK(st.st_mode):
+            continue
+
+        if (os.major(st.st_rdev), os.minor(st.st_rdev)) == dev:
+            return device, mount, fstype
+
+    raise FileNotFoundError("No mount for (%d, %d)" % dev)

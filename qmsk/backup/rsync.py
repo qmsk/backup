@@ -309,7 +309,14 @@ class LVMSource(Source):
             Return local filesystem path for rsync dest.
         """
 
-        raise NotImplementedError("No restore support for lvm sources")
+        dev = self.lvm_volume.dev
+
+        try:
+            device, mount, fstype = qmsk.backup.mount.find_dev(dev)
+        except FileNotFoundError:
+            raise SourceError("LVM {lvm} is not mounted for restore".format(lvm=self.lvm_volume))
+        else:
+            yield mount.rstrip('/') + '/' + self.path
 
     def __str__ (self):
         return 'lvm:{volume}'.format(volume=self.lvm_volume)
