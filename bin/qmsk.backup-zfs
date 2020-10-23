@@ -363,6 +363,8 @@ def main (args):
 
     parser.add_argument('--force-source', action='store_true',
             help="Update ZFS rsync source")
+    parser.add_argument('--ignore-source-mismatch', action='store_true',
+            help="Ignore ZFS rsync source mismatch")
     parser.add_argument('--rsync-source', metavar='RSYNC-SOURCE',
             help="Backup rsync source")
     parser.add_argument('--rsync-option', metavar='-option', action='append', dest='rsync_options', default=[],
@@ -431,10 +433,15 @@ def main (args):
             else:
                 source = None
 
+            if args.ignore_source_mismatch:
+                verify_source = None
+            else:
+                verify_source = source
+
             target.setup(
                     create          = args.setup_create,
                     create_source   = source,
-                    verify_source   = source,
+                    verify_source   = verify_source,
                     force_source    = source if args.force_source else None,
             )
 
