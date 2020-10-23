@@ -1,11 +1,50 @@
-#  Automated LVM/ZFS snapshot, rsync backups
+# Automated ZFS/rsync backups for LVM/ZFS snapshots
 
-Supports incremental rsync backups over SSH, from remote LVM and ZFS filesystem snapshots to local `rsync --link-dest` or ZFS snapshots.
+A suite of Python scripts used to automate backups and restores of ZFS/LVM volumes.
+
+Supports incremental rsync backups over SSH, from remote LVM and ZFS filesystem snapshots to local ZFS or `rsync --link-dest` storage.
+
+## Features
+
+### `qmsk.rsync-ssh-command`
+
+SSH `authorized_keys` command wrapper for `rsync`. Compatible with standard rsync SSH remotes.
+
+* Use `--readonly` to only allow read-only rsync send operations
+* Use `--restrict-path` to only allow rsync sends from specific paths
+* Support for rsync `HOST:lvm:VG/LV` sources to use LVM snapshots for consistent filesystem-level backups
+* Support for rsync `HOST:zfs:POOL/DATASET` sources to use ZFS snapshots for consistent filesystem-level backups
+* Use `--allow-restore` to allow rsync write operations for restores to filesystem or LVM volumes
+* Optional `--sudo` to elevate privileges from non-root SSH user for privileged `rsync`, `lvm` operations
+
+### `qmsk.zfs-ssh-command`
+
+SSH `authorized_keys` command wrapper for `zfs`. Compatible with `ssh ... zfs send ... | zfs recv`.
+
+* Restricted to `zfs send` only
+* Use `--restrict-glob` to only allow ZFS sends from specific datasets
+* Use `--restrict-raw` to only allow sending raw (encrypted) snapshots
+* Use `zfs send POOL/DATASET` to send from temporary snapshot
+* Use `zfs send POOL/DATASET@*` to send from most recent snapshot
+* Compatible with incremental and replication sends
+* Optional `--sudo` to elevate privileges from non-root SSH user for privileged `zfs` operations
+
+### `qmsk.backup-zfs`
+
+Manage ZFS snapshots with optional rsync or ZFS sources
+
+* Use `--rsync-source` to backup remote filesystems using `rsync`, supporting remote LVM/ZFS snapshots for consistent filesystem-level backups when used with `qmsk.rsync-ssh-command`
+* Use `--zfs-source` to backup remote ZFS datasets using `zfs send | zfs recv`
+* Use `--zfs-raw` to transfer encrypted ZFS snapshots that cannot be mounted without the encryption key
+* Use `--ssh-identity/config` to configure SSH credentials used
+* Use `--interval` to manage timed hold policies for snapshots
+* Use `--purge` to rotate old snapshots
+* Use `--restore` to restore from local ZFS snapshot back to remote rsync/ZFS target
 
 ## Install
 
     virtualenv -p python3 /opt/qmsk-backup && /opt/qmsk-backup/bin/pip install \
-        git+https://github.com/qmsk/backup.git@1.0.0
+        git+https://github.com/qmsk/backup.git
 
 ## Usage
 
@@ -63,6 +102,8 @@ The `bin/qmsk.rsync-ssh-command` script can be used as an `~/.ssh/authorized_key
 
 Limit to rsync sender, i.e. rsync from this source.
 
+This is the default behavior. For safety, this requires an explicit `--allow-restore` for write operations
+
 #### `--restrict-path=`
 
 Limit to paths under the given prefix. Can be given multiple times to allow different paths.
@@ -90,6 +131,19 @@ The former will take a `zfs snapshot <pool>/<name>`, mount that, and rsync the c
 The later will find the ZFS mount for the given path, take a ZFS snapshot, mount it, and rsync the contents of that path within the ZFS snapshot.
 
 This syntax is supported for both local rsync sources, as well as by the remote `qmsk.rsync-ssh-command` wrapper.
+
+### zfs snapshot storage
+
+The `qmsk.backup-zfs` script can be used manage ZFS snapshots with retention intervals.
+
+The script has three modes of operation:
+
+* Using `--rsync-source` will first rsync from the remote source, and then create a local ZFS snapshot.
+* Using `--zfs-source` will use ZFS bookmarks to create and send a temporary snapshot from the remote source.
+  This relies on the remote source using the `pvl.zfs-ssh-command` wrapper script.
+* Otherwise, a local ZFS snapshot will be created without any remote sync.
+
+It also supports using rsync to backup remote filesystems onto the local ZFS filesystems before snapshotting.
 
 ### `rsync --link-dest` snapshot storage
 
@@ -178,16 +232,3 @@ This lists the disk usage of each snapshot in reverse order, such that it tells 
 1.4G    snapshots/20161213-223119/
 1.3G    snapshots/20161212-222952/
 ```
-
-### zfs snapshot storage
-
-The `qmsk.backup-zfs` script can be used manage ZFS snapshots with retention intervals.
-
-The script has three modes of operation:
-
-* Using `--rsync-source` will first rsync from the remote source, and then create a local ZFS snapshot.
-* Using `--zfs-source` will use ZFS bookmarks to create and send a temporary snapshot from the remote source.
-  This relies on the remote source using the `pvl.zfs-ssh-command` wrapper script.
-* Otherwise, a local ZFS snapshot will be created without any remote sync.
-
-It also supports using rsync to backup remote filesystems onto the local ZFS filesystems before snapshotting.
