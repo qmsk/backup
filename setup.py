@@ -4,7 +4,7 @@ from distutils.core import setup
 
 setup(
     name            = 'qmsk-backup',
-    version         = '1.0-dev',
+    version         = '1.5-dev',
 
     description     = "Automated LVM/ZFS snapshot, rsync backups",
     url             = 'https://github.com/qmsk/backup',
