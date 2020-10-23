@@ -260,11 +260,11 @@ class Source (object):
 
     def rsync_restore (self, options, dest):
         """
-            Run from given destination to restore path, returning optional stats dict.
+            Run from given destination to restore path.
         """
 
         with self.mount_restore() as path:
-            return rsync(options, [dest, path], sudo=self.sudo)
+            rsync(options, [dest, path], sudo=self.sudo)
 
     def __str__ (self):
         return self.path

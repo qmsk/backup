@@ -227,14 +227,11 @@ class BaseTarget:
         opts = qmsk.invoke.optargs(**rsync_options)
 
         try:
-            stats = self.rsync_source.rsync_restore(opts, path)
+            self.rsync_source.rsync_restore(opts, path)
 
         except qmsk.backup.rsync.Error as error:
             log.warn("%s rsync error: %s", self, error)
             raise
-
-        else:
-            return stats
 
     def snapshot (self, now):
         """

@@ -262,7 +262,7 @@ class ZFSTarget (BaseTarget):
 
             log.info("%s: rsync %s -> %s", self, path, self.rsync_source)
 
-            rsync_stats = self.rsync_restore(path, **rsync_options)
+            self.rsync_restore(path, **rsync_options)
 
         elif self.zfs_source:
             raise Error("ZFS restore is not supported for {zfs_source} source".format(zfs_source=self.zfs_source))
