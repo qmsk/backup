@@ -80,10 +80,8 @@ class Target(BaseTarget):
                 **opts
         )
 
-    def __init__ (self, path, noop=None, **opts):
+    def __init__ (self, path, **opts):
         super().__init__(**opts)
-
-        self.noop = noop
 
         self.path = os.path.abspath(path)
         self.snapshots_path = os.path.join(self.path, 'snapshots')

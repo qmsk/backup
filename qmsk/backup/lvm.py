@@ -5,8 +5,10 @@
 from qmsk.invoke import invoke, optargs, InvokeError
 
 import contextlib
-import os.path
 import logging
+import os
+import os.path
+import stat
 import time
 
 log = logging.getLogger('qmsk.backup.lvm')
@@ -31,7 +33,6 @@ class LVM (object) :
     # path to lvm2 binary
     LVM = '/sbin/lvm'
 
-    
     # VG name
     name = None
 
@@ -58,11 +59,26 @@ class LVM (object) :
 
         return '/dev/{vg}/{lv}'.format(vg=self.name, lv=lv)
 
+    def lv_dev (self, lv):
+        """
+            Logical volume device (major, minor).
+
+            Raises FileNotFoundError if LVM does not exist.
+        """
+
+        path = self.lv_path(lv)
+        st = os.stat(path)
+
+        if not stat.S_ISBLK(st.st_mode):
+            raise Exception("LVM {path} device path is not a block device".format(path=path))
+
+        return os.major(st.st_rdev), os.minor(st.st_rdev)
+
     def command (self, cmd, *args, **opts) :
         """
             Invoke a command with options/arguments, given via Python arguments/keyword arguments
         """
-        
+
         log.debug("{cmd} {opts} {args}".format(cmd=cmd, args=args, opts=opts))
 
         # invoke
@@ -117,7 +133,7 @@ class LVM (object) :
                     if ex.exit != 5 :
                         # lvremove sez "Can't remove open logical volume ..." -> exit(5);
                         raise
-                    
+
                     # retry counter?
                     if retry :
                         log.warn("%s: cleanup: lvremove failed, retrying...", snapshot)
@@ -163,6 +179,10 @@ class LVMVolume (object) :
     @property
     def dev_path (self) :
         return self.lvm.lv_path(self.name)
+
+    @property
+    def dev(self):
+        return self.lvm.lv_dev(self.name)
 
     def verify_exists (self) :
         """
@@ -220,7 +240,7 @@ class LVMSnapshot (LVMVolume) :
     def create (cls, lvm, base, tag, size=LVM_SNAPSHOT_SIZE) :
         """
             Create a new LVM snapshot of the given LV.
-            
+
             Returns a (snapshot_name, dev_path) tuple.
         """
 
@@ -236,7 +256,7 @@ class LVMSnapshot (LVMVolume) :
 
         # snapshot should not
         snapshot.verify_missing()
-        
+
         ## create
         snapshot.open()
 
@@ -275,5 +295,3 @@ class LVMSnapshot (LVMVolume) :
                 base    = str(self.base),
                 name    = repr(self.name),
         )
-
-

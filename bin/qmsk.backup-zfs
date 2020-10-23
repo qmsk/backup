@@ -32,7 +32,7 @@ class ZFSTarget (BaseTarget):
 
     @classmethod
     def config (cls, name,
-            noop        = None,
+            noop            = None,
             zfs_source      = None,
             zfs_raw         = None,
             zfs_bookmark    = None,
@@ -54,6 +54,7 @@ class ZFSTarget (BaseTarget):
                 zfs_source      = zfs_source,
                 zfs_raw         = zfs_raw,
                 zfs_bookmark    = zfs_bookmark,
+                noop            = noop,
                 **opts
         )
 
@@ -134,6 +135,20 @@ class ZFSTarget (BaseTarget):
 
         return mountpoint
 
+    def mount_snapshot(self, snapshot):
+        """
+            Return backup source path.
+        """
+
+        zfs_snapshot = self.zfs.snapshots[snapshot]
+
+        mountpoint = zfs_snapshot.mountpoint
+
+        if not mountpoint:
+            raise Error("ZFS destination is not mounted: %s", self.zfs)
+
+        return mountpoint
+
     def snapshot (self, now, create=False):
         """
             Create new ZFS snapshot for given timestamp.
@@ -147,7 +162,7 @@ class ZFSTarget (BaseTarget):
             # rsync to local ZFS destination, and then create snapshot
             dest_path = self.mount()
 
-            log.info("%s: rsync %s@%s", self, dest_path, snapshot_name)
+            log.info("%s: rsync %s@%s <- %s", self, dest_path, snapshot_name, self.rsync_source)
 
             rsync_stats = self.rsync(dest_path)
 
@@ -230,6 +245,30 @@ class ZFSTarget (BaseTarget):
         # manage intervals
         for interval in self.intervals:
             self.backup_interval(interval, now, snapshot)
+
+    def restore (self, snapshot=None, rsync_options={}):
+        """
+            Restore from backup to rsync source.
+        """
+
+        if snapshot:
+            path = self.mount_snapshot(snapshot)
+        else:
+            path = self.mount()
+
+        if self.rsync_source:
+            # rsync directory contents from local ZFS destination
+            path = path + '/'
+
+            log.info("%s: rsync %s -> %s", self, path, self.rsync_source)
+
+            self.rsync_restore(path, **rsync_options)
+
+        elif self.zfs_source:
+            raise Error("ZFS restore is not supported for {zfs_source} source".format(zfs_source=self.zfs_source))
+
+        else:
+            raise Error("ZFS restore is not supported")
 
     def purge_interval(self, interval, snapshot_holds):
         """
@@ -348,6 +387,15 @@ def main (args):
     parser.add_argument('--purge-other-snapshots', action='store_true',
             help="Also purge other snapshots without pvl-backup:* properties")
 
+    parser.add_argument('--restore', action='store_true',
+            help="Restore from backup")
+    parser.add_argument('--restore-snapshot', metavar='SNAPSHOT',
+            help="Restore from ZFS snapshot")
+    parser.add_argument('--restore-verbose', action='store_true',
+            help="Verbose output from restore")
+    parser.add_argument('--restore-delete', action='store_true',
+            help="Delete any extra files present on the source when restoring")
+
     parser.add_argument('target', metavar='ZFS', nargs='+',
             help="ZFS target")
 
@@ -389,14 +437,24 @@ def main (args):
                     force_source    = source if args.force_source else None,
             )
 
-            if not args.skip_backup:
-                target.backup(
-                        create          = args.setup_create,
-                )
+            if args.restore:
+                target.restore(
+                    snapshot    = args.restore_snapshot,
 
-            # purge intervals
-            if args.purge:
-                target.purge(other_snapshots=args.purge_other_snapshots)
+                    rsync_options = dict(
+                        verbose     = args.restore_verbose,
+                        delete      = args.restore_delete,
+                    ),
+                )
+            else:
+                if not args.skip_backup:
+                    target.backup(
+                            create          = args.setup_create,
+                    )
+
+                # purge intervals
+                if args.purge:
+                    target.purge(other_snapshots=args.purge_other_snapshots)
 
         except (Error, qmsk.backup.zfs.Error) as error:
             log.exception("%s: %s", target, error)

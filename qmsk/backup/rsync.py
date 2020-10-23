@@ -149,6 +149,17 @@ def print_stats(rows):
 
 def rsync (options, paths, sudo=False):
     """
+        Run rsync, passing through stdout.
+
+        Raises qmsk.invoke.InvokeError
+    """
+
+    log.info("rsync %s %s", ' '.join(options), ' '.join(paths))
+
+    stdout = qmsk.invoke.invoke(RSYNC, options + paths, sudo=sudo, stdout=True)
+
+def rsync_stats (options, paths, sudo=False):
+    """
         Run rsync.
 
         Returns a stats dict if there is any valid --stats output, None otherwise.
@@ -208,28 +219,52 @@ class Source (object):
         self.sudo = sudo
 
     @contextlib.contextmanager
-    def mount(self):
+    def mount_snapshot (self):
         """
-            Return local filesystem path for source.
+            Return local filesystem path for rsync source.
         """
 
         yield self.path
 
-    def rsync_sender (self, options):
+    @contextlib.contextmanager
+    def mount_restore (self):
         """
-            Run with --server --sender options, passing through stdin/stdout.
+            Return local filesystem path for rsync dest.
         """
 
-        with self.mount() as path:
+        yield self.path
+
+    def rsync_server (self, options):
+        """
+            Run to restore path in --server mode, passing through stdin/stdout.
+        """
+
+        with self.mount_restore() as path:
+            return rsync_server(options, ['.', path], sudo=self.sudo)
+
+    def rsync_sender (self, options):
+        """
+            Run from snapshot path in --server --sender mode, passing through stdin/stdout.
+        """
+
+        with self.mount_snapshot() as path:
             return rsync_server(options, ['.', path], sudo=self.sudo)
 
     def rsync (self, options, dest):
         """
-            Run with the given destination, returning optional stats dict.
+            Run from snapshot to given destination, returning optional stats dict.
         """
 
-        with self.mount() as path:
-            return rsync(options, [path, dest], sudo=self.sudo)
+        with self.mount_snapshot() as path:
+            return rsync_stats(options, [path, dest], sudo=self.sudo)
+
+    def rsync_restore (self, options, dest):
+        """
+            Run from given destination to restore path.
+        """
+
+        with self.mount_restore() as path:
+            rsync(options, [dest, path], sudo=self.sudo)
 
     def __str__ (self):
         return self.path
@@ -257,7 +292,7 @@ class LVMSource(Source):
         self.lvm_opts = lvm_opts
 
     @contextlib.contextmanager
-    def mount (self):
+    def mount_snapshot (self):
         """
             Mount LVM snapshot of volume
         """
@@ -278,6 +313,21 @@ class LVMSource(Source):
                     sudo        = self.sudo,
             ) as mountpoint:
                 yield mountpoint.path + '/' + self.path
+
+    @contextlib.contextmanager
+    def mount_restore (self):
+        """
+            Return local filesystem path for rsync dest.
+        """
+
+        dev = self.lvm_volume.dev
+
+        try:
+            device, mount, fstype = qmsk.backup.mount.find_dev(dev)
+        except FileNotFoundError:
+            raise SourceError("LVM {lvm} is not mounted for restore".format(lvm=self.lvm_volume))
+        else:
+            yield mount.rstrip('/') + '/' + self.path
 
     def __str__ (self):
         return 'lvm:{volume}'.format(volume=self.lvm_volume)
@@ -309,7 +359,7 @@ class ZFSSource(Source):
         })
 
     @contextlib.contextmanager
-    def mount (self):
+    def mount_snapshot (self):
         """
             Mount ZFS snapshot of volume.
         """
@@ -325,6 +375,14 @@ class ZFSSource(Source):
                     sudo        = self.sudo,
             ) as mountpoint:
                 yield mountpoint.path + '/' + self.path
+
+    @contextlib.contextmanager
+    def mount_restore (self):
+        """
+            Return local filesystem path for rsync dest.
+        """
+
+        raise SourceError("No restore support for zfs sources")
 
     def __str__ (self):
         return 'zfs:{zfs}'.format(zfs=self.zfs)
@@ -376,8 +434,8 @@ def parse_server_command(command):
 
         Returns:
             options:    list of --options and -opts from parse_options
-            source:     source path if sender, or None
-            dest:       dest path if receiver, or None
+            path:       source path if sender, dest path if server
+            sender:     True if sender, False if server
 
         Raises:
             CommandError
@@ -389,50 +447,25 @@ def parse_server_command(command):
     if cmd.split('/')[-1] != 'rsync':
         raise CommandError("Invalid command: {cmd}".format(cmd=cmd))
 
+    if not '--server' in options:
+        raise CommandError("Missing --server")
+
     if len(args) != 2:
         raise CommandError("Invalid source/destination paths")
 
     if args[0] != '.':
         raise CommandError("Invalid source-path for server")
 
+    # parse real source
     path = args[1]
 
-    # parse real source
-    if not '--server' in options:
-        raise CommandError("Missing --server")
-
-    elif not '--sender' in options:
-        # write
-        source = None
-        dest = path
-
-    else:
-        # read
-        source = path
-        dest = None
+    if '--sender' in options:
+        sender = True
+    else :
+        sender = False
 
     # ok
-    return options, source, dest
-
-def parse_sender_command (command):
-    """
-        Parse rsync's internal --server --sender command used when reading over SSH.
-
-        Returns:
-            options:    list of --options and -opts from parse_options
-            source:     source path
-
-        Raises:
-            CommandError
-
-    """
-
-    options, source, dest = parse_server_command(command)
-
-    if dest:
-        raise CommandError("Missing --sender")
-    else:
-        return options, source
+    return options, path, sender
 
 def parse_source (path, restrict_paths=None, allow_remote=True, sudo=None, lvm_opts={}):
     """

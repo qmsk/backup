@@ -270,6 +270,16 @@ class Snapshot (object):
     def __str__ (self):
         return '{filesystem}@{name}'.format(name=self.name, filesystem=self.filesystem)
 
+
+    @property
+    def mountpoint(self):
+        mountpoint = self.filesystem.mountpoint
+
+        if mountpoint:
+            return '{mountpoint}/.zfs/snapshot/{snapshot}'.format(mountpoint=mountpoint, snapshot=self.name)
+        else:
+            return None
+
     # TODO: default to properties=None to explode if not set?
     def __getitem__ (self, name):
         return self.properties[name]
