@@ -98,6 +98,9 @@ class Wrapper:
                 properties          = args.properties,
                 replication_stream  = args.replication,
                 raw                 = args.raw,
+                compressed          = args.compressed,
+                large_block         = args.large_block,
+                dedup               = args.dedup,
             )
 
             if args.bookmark:
@@ -119,6 +122,9 @@ class Wrapper:
         parser_send.add_argument('-p', dest='properties', action='store_true', help="Send dataset properties")
         parser_send.add_argument('-R', dest='replication', action='store_true', help="Send replication stream")
         parser_send.add_argument('-w', dest='raw', action='store_true', help="For encrypted datasets, send data exactly as it exists on disk")
+        parser_send.add_argument('-c', dest='compressed', action='store_true', help="For compressed datasets, send compresssed blocks from disk")
+        parser_send.add_argument('-L', dest='large_block', action='store_true', help="Generate a stream which may contain blocks larger than 128KB")
+        parser_send.add_argument('-D', dest='dedup', action='store_true', help="Generate a deduplicated stream")
         parser_send.add_argument('zfs', metavar='ZFS', help="Source ZFS filesystem, with optional @snapshot")
         parser_send.add_argument('--bookmark', metavar='BOOKMARK', help="Bookmark snapshot after send")
         parser_send.add_argument('--purge-bookmark', metavar='BOOKMARK', help="Destroy bookmark after snapshot send")

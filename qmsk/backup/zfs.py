@@ -317,7 +317,7 @@ class Snapshot (object):
     def release(self, tag):
         self.filesystem.zfs_write('release', tag, self)
 
-    def send(self, incremental=None, full_incremental=None, properties=False, replication_stream=None, raw=None, stdout=True):
+    def send(self, incremental=None, full_incremental=None, properties=False, replication_stream=None, raw=None, compressed=None, large_block=None, dedup=None, stdout=True):
         """
             Write out ZFS contents of this snapshot to stdout.
 
@@ -327,6 +327,9 @@ class Snapshot (object):
 
         self.filesystem.zfs_read('send',
             '--raw' if raw else None, # passed as first argument to allow whitelisting `sudo /usr/sbin/zfs send --raw *`
+            '-c' if compressed else None,
+            '-L' if large_block else None,
+            '-D' if dedup else None,
             '-R' if replication_stream else None,
             '-p' if properties else None,
             '-i' + str(incremental) if incremental else None,
@@ -361,7 +364,7 @@ class Source:
     def __str__(self):
         return self.source
 
-    def stream_send(self, raw=None, incremental=None, full_incremental=None, properties=False, replication_stream=None, snapshot=None, bookmark=None, purge_bookmark=None):
+    def stream_send(self, raw=None, compressed=None, large_block=None, dedup=None, incremental=None, full_incremental=None, properties=False, replication_stream=None, snapshot=None, bookmark=None, purge_bookmark=None):
         """
             Returns a context manager.
         """
@@ -373,6 +376,9 @@ class Source:
 
         return self.invoker.stream('zfs', ['send'] + qmsk.invoke.optargs(
             '-w' if raw else None,
+            '-c' if compressed else None,
+            '-L' if large_block else None,
+            '-D' if dedup else None,
             '-R' if replication_stream else None,
             '-p' if properties else None,
             '-i' + str(incremental) if incremental else None,
