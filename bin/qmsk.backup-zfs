@@ -35,6 +35,7 @@ class ZFSTarget (BaseTarget):
             noop            = None,
             zfs_source      = None,
             zfs_raw         = None,
+            zfs_compressed  = None,
             zfs_bookmark    = None,
             invoker_options = {},
             ssh_options     = {},
@@ -52,18 +53,21 @@ class ZFSTarget (BaseTarget):
                     invoker = qmsk.invoke.Invoker(**invoker_options),
                 ),
                 zfs_source      = zfs_source,
-                zfs_raw         = zfs_raw,
+                zfs_send_options = dict(
+                    raw         = zfs_raw,
+                    compressed  = zfs_compressed,
+                ),
                 zfs_bookmark    = zfs_bookmark,
                 noop            = noop,
                 **opts
         )
 
-    def __init__ (self, zfs, zfs_source=None, zfs_raw=None, zfs_bookmark=None, **opts):
+    def __init__ (self, zfs, zfs_source=None, zfs_send_options={}, zfs_bookmark=None, **opts):
         super(ZFSTarget, self).__init__(**opts)
 
         self.zfs = zfs
         self.zfs_source = zfs_source
-        self.zfs_raw = zfs_raw
+        self.zfs_send_options = zfs_send_options
         self.zfs_bookmark = zfs_bookmark
 
     def __str__ (self):
@@ -190,11 +194,11 @@ class ZFSTarget (BaseTarget):
             send_bookmark = self.zfs_bookmark + ':' + snapshot_name
 
             with self.zfs_source.stream_send(
-                raw             = self.zfs_raw,
                 incremental     = '#' + incremental_bookmark if incremental_bookmark else None,
                 snapshot        = None, # create temporary snapshot
                 bookmark        = send_bookmark, # create bookmark for sent snapshot
                 purge_bookmark  = incremental_bookmark, # destroy bookmark for incremental snapshot
+                **self.zfs_send_options
             ) as stream:
                 # create new snapshot with desired name
                 # implicitly creates dataset if missing
@@ -375,6 +379,8 @@ def main (args):
             help="ZFS send/recv from SSH remote or local pool")
     parser.add_argument('--zfs-raw', action='store_true',
             help="ZFS send --raw of encrypted dataset")
+    parser.add_argument('--zfs-compressed', action='store_true',
+            help="ZFS send --compressed of compressed dataset")
     parser.add_argument('--zfs-bookmark', metavar='BOOKMARK-PREFIX', default=ZFS_BOOKMARK,
             help="Sender bookmark prefix")
     parser.add_argument('--ssh-config', metavar='PATH')
@@ -410,6 +416,7 @@ def main (args):
                     rsync_options   = args.rsync_options,
                     zfs_source      = args.zfs_source,
                     zfs_raw         = args.zfs_raw,
+                    zfs_compressed  = args.zfs_compressed,
                     zfs_bookmark    = args.zfs_bookmark,
                     invoker_options = dict(
                         sudo            = args.sudo,
