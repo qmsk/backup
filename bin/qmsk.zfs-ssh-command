@@ -41,11 +41,46 @@ class Wrapper:
         Command wrapper
     """
 
-    def __init__(self, noop=None, sudo=None, restrict_raw=None, restrict_glob=None):
+    def __init__(self, noop=None, sudo=None, restrict_raw=None, restrict_glob=None, allow_receive=None, allow_force_receive=None):
         self.noop = noop
         self.sudo = sudo
         self.restrict_raw = restrict_raw
         self.restrict_glob = restrict_glob
+        self.allow_receive = allow_receive
+        self.allow_force_receive = allow_force_receive
+
+    def zfs_receive(self, args):
+        target = args.zfs
+
+        if '@' in target:
+            zfs_name, snapshot_name = target.split('@', 1)
+        else:
+            zfs_name = target
+            snapshot_name = None
+
+        if not self.allow_receive:
+            raise Error("Restricted recv operation")
+
+        if args.receive_force and not self.allow_force_receive:
+            raise Error("Restricted recv -F operation")
+
+        if self.restrict_glob and not any(fnmatch.fnmatch(zfs_name, pattern) for pattern in self.restrict_glob):
+            raise Error("Restricted send source: {name}".format(name=zfs_name))
+
+        zfs = qmsk.backup.zfs.open(zfs_name,
+            noop    = self.noop,
+            invoker = qmsk.invoke.Invoker(sudo=self.sudo),
+        )
+
+        log.info("zfs recv %s with snapshot=%s, force=%s", zfs, snapshot_name, args.receive_force)
+
+        zfs.receive(
+            snapshot_name   = snapshot_name,
+            force           = args.receive_force,
+            stdin           = True, # passthrough
+        )
+
+        return 0
 
     def zfs_send(self, args):
         target = args.zfs
@@ -129,10 +164,16 @@ class Wrapper:
         parser_send.add_argument('--bookmark', metavar='BOOKMARK', help="Bookmark snapshot after send")
         parser_send.add_argument('--purge-bookmark', metavar='BOOKMARK', help="Destroy bookmark after snapshot send")
 
+        parser_recv = subparsers.add_parser('receive', aliases=['recv'])
+        parser_recv.add_argument('-F', dest='receive_force', action='store_true', help="Force a rollback of the file system to the most recent snapshot before performing the receive operation.")
+        parser_recv.add_argument('zfs', metavar='ZFS', help="Destination ZFS filesystem, with optional @snapshot")
+
         args = parser.parse_args(args)
 
         if args.command == 'send':
             return self.zfs_send(args)
+        elif args.command == 'receive' or args.command == 'recv':
+            return self.zfs_receive(args)
         else:
             log.error("Unsupported ZFS command: %s", args.command)
             return 1
@@ -175,6 +216,12 @@ def main (args):
     parser.add_argument('--restrict-raw', action='store_true',
             help="Only allow raw snapshot sends")
 
+    parser.add_argument('--allow-receive', '--allow-recv', action='store_true',
+            help="Also allow zfs recv for restore operations. The --restrict-glob still applies.")
+
+    parser.add_argument('--allow-force-receive', '--allow-force-recv', action='store_true',
+            help="Also allow zfs recv -F for restore operations. Does NOT imply --allow-receive.")
+
     parser.set_defaults(
         restrict_glob = [],
     )
@@ -200,6 +247,9 @@ def main (args):
             sudo            = args.sudo,
             restrict_raw    = args.restrict_raw,
             restrict_glob   = args.restrict_glob,
+
+            allow_receive       = args.allow_receive,
+            allow_force_receive = args.allow_force_receive,
         )
 
         return wrapper(command_parts[0], command_parts[1:])
