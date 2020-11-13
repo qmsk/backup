@@ -473,6 +473,8 @@ def main (args):
                     ),
                     zfs_options = dict(
                         force       = args.zfs_restore_force,
+                        noop        = args.noop,
+                        verbose     = args.restore_verbose,
                     )
                 )
             else:

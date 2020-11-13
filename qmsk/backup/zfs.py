@@ -432,7 +432,7 @@ class Source:
             purge_bookmark = purge_bookmark,
         ))
 
-    def _receive_opts(self, snapshot=None, force=None):
+    def _receive_opts(self, snapshot=None, force=None, noop=None, verbose=None):
         name = self.zfs_name
 
         if snapshot:
@@ -440,6 +440,8 @@ class Source:
 
         return qmsk.invoke.optargs(
             '-F' if force else None,
+            '-n' if noop else None,
+            '-v' if verbose else None,
 
             name,
         )
