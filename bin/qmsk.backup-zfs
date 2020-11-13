@@ -410,7 +410,7 @@ def main (args):
             help="Restore from ZFS snapshot")
     parser.add_argument('--restore-verbose', action='store_true',
             help="Verbose output from restore")
-    parser.add_argument('--restore-delete', action='store_true',
+    parser.add_argument('--rsync-restore-delete', action='store_true',
             help="Delete any extra files present on the source when restoring")
     parser.add_argument('--zfs-restore-force', action='store_true',
             help="Use zfs recv -F to force rollback the target dataset for the restore. Destroys any changes on the source, only requires if restored dataset already exists.")
@@ -469,7 +469,7 @@ def main (args):
 
                     rsync_options = dict(
                         verbose     = args.restore_verbose,
-                        delete      = args.restore_delete,
+                        delete      = args.rsync_restore_delete,
                     ),
                     zfs_options = dict(
                         force       = args.zfs_restore_force,
