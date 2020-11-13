@@ -250,17 +250,17 @@ class ZFSTarget (BaseTarget):
         for interval in self.intervals:
             self.backup_interval(interval, now, snapshot)
 
-    def restore (self, snapshot=None, rsync_options={}):
+    def restore (self, snapshot=None, rsync_options={}, zfs_options=None):
         """
             Restore from backup to rsync source.
         """
 
-        if snapshot:
-            path = self.mount_snapshot(snapshot)
-        else:
-            path = self.mount()
-
         if self.rsync_source:
+            if snapshot:
+                path = self.mount_snapshot(snapshot)
+            else:
+                path = self.mount()
+
             # rsync directory contents from local ZFS destination
             path = path + '/'
 
@@ -269,7 +269,16 @@ class ZFSTarget (BaseTarget):
             self.rsync_restore(path, **rsync_options)
 
         elif self.zfs_source:
-            raise Error("ZFS restore is not supported for {zfs_source} source".format(zfs_source=self.zfs_source))
+            if snapshot:
+                zfs_snapshot = self.zfs.snapshots[snapshot]
+            else:
+                # send from last snapshot, not filesystem - sending from filesystem requires it to be unmounted
+                zfs_snapshot = self.zfs.last_snapshot()
+
+            log.info("%s: zfs %s -> %s", self, zfs_snapshot, self.zfs_source)
+
+            with self.zfs_source.stream_receive(**zfs_options) as stream:
+                zfs_snapshot.send(stdout=stream, **self.zfs_send_options)
 
         else:
             raise Error("ZFS restore is not supported")
@@ -403,6 +412,8 @@ def main (args):
             help="Verbose output from restore")
     parser.add_argument('--restore-delete', action='store_true',
             help="Delete any extra files present on the source when restoring")
+    parser.add_argument('--zfs-restore-force', action='store_true',
+            help="Use zfs recv -F to force rollback the target dataset for the restore. Destroys any changes on the source, only requires if restored dataset already exists.")
 
     parser.add_argument('target', metavar='ZFS', nargs='+',
             help="ZFS target")
@@ -460,6 +471,9 @@ def main (args):
                         verbose     = args.restore_verbose,
                         delete      = args.restore_delete,
                     ),
+                    zfs_options = dict(
+                        force       = args.zfs_restore_force,
+                    )
                 )
             else:
                 if not args.skip_backup:
