@@ -95,6 +95,9 @@ def invoke (cmd, args, stdin=None, stdout=None, quiet=False, setenv=None, sudo=F
     elif stdout is False:
         # discard
         popen_stdout = subprocess.DEVNULL
+    else:
+        # stdout from given open file
+        popen_stdout = stdout
 
     if setenv:
         env = dict(os.environ)
