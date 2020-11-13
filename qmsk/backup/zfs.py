@@ -366,7 +366,7 @@ class Source:
 
     def stream_send(self, raw=None, compressed=None, large_block=None, dedup=None, incremental=None, full_incremental=None, properties=False, replication_stream=None, snapshot=None, bookmark=None, purge_bookmark=None):
         """
-            Returns a context manager.
+            Returns a context manager for the send stream.
         """
 
         name = self.zfs_name
@@ -389,4 +389,20 @@ class Source:
             # custom qmsk.backup-ssh-command extensions
             bookmark = bookmark,
             purge_bookmark = purge_bookmark,
+        ))
+
+    def stream_receive(self, snapshot=None, force=None):
+        """
+            Returns a context manager for the recv stream.
+        """
+
+        name = self.zfs_name
+
+        if snapshot:
+            name += '@' + snapshot
+
+        return self.invoker.stream('zfs', ['receive'] + qmsk.invoke.optargs(
+            '-F' if force else None,
+
+            name,
         ))
