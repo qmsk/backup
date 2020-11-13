@@ -277,8 +277,8 @@ class ZFSTarget (BaseTarget):
 
             log.info("%s: zfs %s -> %s", self, zfs_snapshot, self.zfs_source)
 
-            with self.zfs_source.stream_receive(**zfs_options) as stream:
-                zfs_snapshot.send(stdout=stream, **self.zfs_send_options)
+            with zfs_snapshot.stream_send(**self.zfs_send_options) as stream:
+                self.zfs_source.receive(stdin=stream, **zfs_options)
 
         else:
             raise Error("ZFS restore is not supported")
