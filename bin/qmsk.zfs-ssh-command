@@ -65,7 +65,7 @@ class Wrapper:
             raise Error("Restricted recv -F operation")
 
         if self.restrict_glob and not any(fnmatch.fnmatch(zfs_name, pattern) for pattern in self.restrict_glob):
-            raise Error("Restricted send source: {name}".format(name=zfs_name))
+            raise Error("Restricted recv source: {name}".format(name=zfs_name))
 
         zfs = qmsk.backup.zfs.Filesystem(zfs_name,
             noop    = self.noop,
