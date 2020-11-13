@@ -45,6 +45,19 @@ def zfs(*args, invoker=qmsk.invoke.Invoker(), **opts):
         return [line.strip().split('\t') for line in stdout]
 
 @contextlib.contextmanager
+def zfs_stream(*args, invoker=qmsk.invoke.Invoker(), **opts):
+    try:
+        with invoker.stream(ZFS, qmsk.invoke.optargs(*args), **opts) as stream:
+            yield stream
+    except qmsk.invoke.InvokeError as error:
+        if error.exit == 1:
+            raise ZFSError(error.stderr)
+        elif error.exit == 2:
+            raise CommandError(error.stderr)
+        else:
+            raise Error(error.stderr)
+
+@contextlib.contextmanager
 def snapshot(zfs, snapshot_name=None, prefix=SNAPSHOT_PREFIX, **opts):
     """
         With ZFS snapshot.
@@ -97,6 +110,17 @@ class Filesystem (object):
         """
 
         return zfs(*args, invoker=self.invoker, **opts)
+
+    def zfs_stream (self, *args, **opts):
+        """
+            ZFS wrapper for sudo+noop
+
+            Run read-only commands that are also executed when --noop.
+
+            Contextmanager yielding stdout stream.
+        """
+
+        return zfs_stream(*args, invoker=self.invoker, **opts)
 
     def zfs_write (self, *args, **opts):
         """
@@ -233,18 +257,24 @@ class Filesystem (object):
     def destroy_bookmark(self, bookmark):
         self.zfs_write('destroy', '{filesystem}#{bookmark}'.format(filesystem=self.name, bookmark=bookmark))
 
-    def receive(self, snapshot_name=None, *, force=None, properties={}, stdin=True):
+    def receive(self, snapshot_name=None, *, force=None, noop=None, verbose=None, properties={}, stdin=True):
         if snapshot_name:
             target = '{zfs}@{snapshot}'.format(zfs=self, snapshot=snapshot_name)
         else:
             target = self
 
-        options = ['-o{property}={value}'.format(property=key, value=value) for key, value in properties.items() if value is not None]
+        properties_options = ['-o{property}={value}'.format(property=key, value=value) for key, value in properties.items() if value is not None]
 
         # TODO: parse -v output to determine the received snapshot name?
         #   receiving full stream of test1/test@1 into test2/backup/test@1
         #   received 42,5KB stream in 1 seconds (42,5KB/sec)
-        self.zfs_write('receive', '-F' if force else None, *options, target, stdin=stdin)
+        self.zfs_write('receive',
+            '-F' if force else None,
+            '-n' if noop else None,
+            '-v' if verbose else None,
+
+            *properties_options, target, stdin=stdin,
+        )
 
         if snapshot_name:
             return Snapshot(self, snapshot_name)
@@ -317,15 +347,13 @@ class Snapshot (object):
     def release(self, tag):
         self.filesystem.zfs_write('release', tag, self)
 
-    def send(self, incremental=None, full_incremental=None, properties=False, replication_stream=None, raw=None, compressed=None, large_block=None, dedup=None, stdout=True):
+    def _send_options(self, incremental=None, full_incremental=None, properties=False, replication_stream=None, raw=None, compressed=None, large_block=None, dedup=None):
         """
-            Write out ZFS contents of this snapshot to stdout.
-
             incremental: Snapshot, None     - send incremental from given snapshot
             properties: bool                - send ZFS properties
         """
 
-        self.filesystem.zfs_read('send',
+        return (
             '--raw' if raw else None, # passed as first argument to allow whitelisting `sudo /usr/sbin/zfs send --raw *`
             '-c' if compressed else None,
             '-L' if large_block else None,
@@ -335,8 +363,21 @@ class Snapshot (object):
             '-i' + str(incremental) if incremental else None,
             '-I' + str(full_incremental) if full_incremental else None,
             self,
-            stdout=stdout,
         )
+
+    def send(self, stdout=True, **options):
+        """
+            Write out ZFS contents of this snapshot to stdout.
+        """
+
+        return self.filesystem.zfs_read('send', *self._send_options(**options), stdout=stdout)
+
+    def stream_send(self, **options):
+        """
+            Returns a context manager for the send stream.
+        """
+
+        return self.filesystem.zfs_stream('send', *self._send_options(**options))
 
 class Source:
     """
@@ -366,7 +407,7 @@ class Source:
 
     def stream_send(self, raw=None, compressed=None, large_block=None, dedup=None, incremental=None, full_incremental=None, properties=False, replication_stream=None, snapshot=None, bookmark=None, purge_bookmark=None):
         """
-            Returns a context manager.
+            Returns a context manager for the send stream.
         """
 
         name = self.zfs_name
@@ -390,3 +431,24 @@ class Source:
             bookmark = bookmark,
             purge_bookmark = purge_bookmark,
         ))
+
+    def _receive_opts(self, snapshot=None, force=None, noop=None, verbose=None):
+        name = self.zfs_name
+
+        if snapshot:
+            name += '@' + snapshot
+
+        return qmsk.invoke.optargs(
+            '-F' if force else None,
+            '-n' if noop else None,
+            '-v' if verbose else None,
+
+            name,
+        )
+
+    def receive(self, stdin, **options):
+        """
+            Invoke receive with given stdin stream.
+        """
+
+        return self.invoker.invoke('zfs', ['receive'] + self._receive_opts(**options), stdin=stdin)
