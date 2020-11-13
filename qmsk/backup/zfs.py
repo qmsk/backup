@@ -257,18 +257,24 @@ class Filesystem (object):
     def destroy_bookmark(self, bookmark):
         self.zfs_write('destroy', '{filesystem}#{bookmark}'.format(filesystem=self.name, bookmark=bookmark))
 
-    def receive(self, snapshot_name=None, *, force=None, properties={}, stdin=True):
+    def receive(self, snapshot_name=None, *, force=None, noop=None, verbose=None, properties={}, stdin=True):
         if snapshot_name:
             target = '{zfs}@{snapshot}'.format(zfs=self, snapshot=snapshot_name)
         else:
             target = self
 
-        options = ['-o{property}={value}'.format(property=key, value=value) for key, value in properties.items() if value is not None]
+        properties_options = ['-o{property}={value}'.format(property=key, value=value) for key, value in properties.items() if value is not None]
 
         # TODO: parse -v output to determine the received snapshot name?
         #   receiving full stream of test1/test@1 into test2/backup/test@1
         #   received 42,5KB stream in 1 seconds (42,5KB/sec)
-        self.zfs_write('receive', '-F' if force else None, *options, target, stdin=stdin)
+        self.zfs_write('receive',
+            '-F' if force else None,
+            '-n' if noop else None,
+            '-v' if verbose else None,
+
+            *properties_options, target, stdin=stdin,
+        )
 
         if snapshot_name:
             return Snapshot(self, snapshot_name)

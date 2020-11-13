@@ -77,6 +77,8 @@ class Wrapper:
         zfs.receive(
             snapshot_name   = snapshot_name,
             force           = args.receive_force,
+            noop            = args.receive_noop,
+            verbose         = args.receive_verbose,
             stdin           = True, # passthrough
         )
 
@@ -166,6 +168,8 @@ class Wrapper:
 
         parser_recv = subparsers.add_parser('receive', aliases=['recv'])
         parser_recv.add_argument('-F', dest='receive_force', action='store_true', help="Force a rollback of the file system to the most recent snapshot before performing the receive operation.")
+        parser_recv.add_argument('-n', dest='receive_noop', action='store_true', help="Do not actually receive the stream.")
+        parser_recv.add_argument('-v', dest='receive_verbose', action='store_true', help="Print verbose information about the stream and the time required to perform the receive operation.")
         parser_recv.add_argument('zfs', metavar='ZFS', help="Destination ZFS filesystem, with optional @snapshot")
 
         args = parser.parse_args(args)
