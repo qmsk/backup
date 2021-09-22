@@ -439,7 +439,7 @@ class Source:
     def __str__(self):
         return self.source
 
-    def stream_send(self, raw=None, compressed=None, large_block=None, dedup=None, incremental=None, full_incremental=None, properties=False, replication_stream=None, snapshot=None, bookmark=None, purge_bookmark=None):
+    def stream_send(self, raw=None, compressed=None, large_block=None, dedup=None, incremental=None, full_incremental=None, properties=False, replication_stream=None, snapshot=None, bookmark=None, purge_bookmark=None, purge_bookmarks=None, keep_bookmark=None):
         """
             Returns a context manager for the send stream.
         """
@@ -464,6 +464,8 @@ class Source:
             # custom qmsk.backup-ssh-command extensions
             bookmark = bookmark,
             purge_bookmark = purge_bookmark,
+            purge_bookmarks = purge_bookmarks,
+            keep_bookmark = keep_bookmark,
         ))
 
     def _receive_opts(self, snapshot=None, force=None, noop=None, verbose=None):
