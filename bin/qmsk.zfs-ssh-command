@@ -125,13 +125,18 @@ class Wrapper:
             # send from temporary snapshot
             snapshot_context = qmsk.backup.zfs.snapshot(zfs, properties={'qmsk-backup:send': incremental_snapshot})
 
+            # cannot send temporarily created snapshot in --noop mode
+            noop_send = self.noop
+
         elif snapshot_name == '*': # zfs send tank/foo@*
             # send from most recent snapshot
             snapshot_context = wrap_context(zfs.last_snapshot())
+            noop_send = False
 
         else: # zfs send tank/foo@xxx
             # send from given snapshot
             snapshot_context = wrap_context(zfs.snapshots[snapshot_name])
+            noop_send = False
 
         log.info("zfs send %s from incremental=%s to snapshot=@%s with bookmark=%s", zfs, send_incremental, snapshot_context, args.bookmark)
 
@@ -145,6 +150,8 @@ class Wrapper:
                 compressed          = args.compressed,
                 large_block         = args.large_block,
                 dedup               = args.dedup,
+
+                noop                = noop_send,
             )
 
             if args.bookmark:
