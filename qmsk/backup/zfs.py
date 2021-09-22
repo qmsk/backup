@@ -172,7 +172,7 @@ class Filesystem (object):
 
         self.zfs_write('create', *args)
 
-    def parse_snapshot(self, name, **opts):
+    def _parse_snapshot(self, name, **opts):
         filesystem, snapshot = name.split('@', 1)
 
         return Snapshot(self, snapshot,
@@ -184,7 +184,7 @@ class Filesystem (object):
         o = ','.join(('name', 'userrefs') + properties)
 
         for name, userrefs, *propvalues in self.zfs_read('list', '-H', '-tsnapshot', '-o' + o, '-r', self.name):
-            snapshot = self.parse_snapshot(name,
+            snapshot = self._parse_snapshot(name,
                     userrefs    = int(userrefs),
                     properties  = {name: (None if value == '-' else value) for name, value in zip(properties, propvalues)},
             )
@@ -247,7 +247,7 @@ class Filesystem (object):
             snapshots = list(self.list_snapshots())
 
         for name, tag, timestamp in self.zfs_read('holds', '-H', *snapshots):
-            snapshot = self.parse_snapshot(name.strip())
+            snapshot = self._parse_snapshot(name.strip())
 
             yield snapshot, tag.strip()
 
@@ -303,12 +303,6 @@ class Filesystem (object):
             pass
 
 class Snapshot (object):
-    @classmethod
-    def parse(cls, name, **opts):
-        filesystem, snapshot = name.split('@', 1)
-
-        return cls(filesystem, snapshot, **opts)
-
     def __init__ (self, filesystem, name, properties={}, noop=None, userrefs=None):
         self.filesystem = filesystem
         self.name = name
