@@ -251,6 +251,26 @@ class Filesystem (object):
 
             yield snapshot, tag.strip()
 
+    def _parse_bookmark(self, name, **opts):
+        filesystem, bookmark = name.split('#', 1)
+
+        return Bookmark(self, bookmark,
+            noop    = self.noop,
+            **opts
+        )
+
+    def list_bookmarks(self, *properties):
+        o = ','.join(('name', ) + properties)
+
+        for name, *propvalues in self.zfs_read('list', '-H', '-tbookmark', '-o' + o, '-r', self.name):
+            bookmark = self._parse_bookmark(name,
+                    properties  = {name: (None if value == '-' else value) for name, value in zip(properties, propvalues)},
+            )
+
+            log.debug("%s: bookmark %s", self, bookmark)
+
+            yield bookmark
+
     def bookmark(self, snapshot_name, bookmark):
         self.zfs_write('bookmark', '{snapshot}@{filesystem}'.format(snapshot=snapshot_name, filesystem=self.name), bookmark)
 
@@ -378,6 +398,20 @@ class Snapshot (object):
         """
 
         return self.filesystem.zfs_stream('send', *self._send_options(**options))
+
+class Bookmark (object):
+    def __init__ (self, filesystem, name, properties={}, noop=None):
+        self.filesystem = filesystem
+        self.name = name
+        self.properties = properties
+
+        self.noop = noop
+
+    def __str__ (self):
+        return '{filesystem}#{name}'.format(name=self.name, filesystem=self.filesystem)
+
+    def destroy(self):
+        self.filesystem.zfs_write('destroy', self)
 
 class Source:
     """
