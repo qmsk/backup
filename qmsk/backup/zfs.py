@@ -102,16 +102,19 @@ class Filesystem (object):
     def __str__(self):
         return self.name
 
-    def zfs_read (self, *args, **opts):
+    def zfs_read (self, *args, noop=None, **opts):
         """
             ZFS wrapper for sudo+noop
 
             Run read-only commands that are also executed when --noop.
         """
 
-        return zfs(*args, invoker=self.invoker, **opts)
+        if noop:
+            return log.warning("noop: zfs %s", args)
+        else:
+            return zfs(*args, invoker=self.invoker, **opts)
 
-    def zfs_stream (self, *args, **opts):
+    def zfs_stream (self, *args, noop=None, **opts):
         """
             ZFS wrapper for sudo+noop
 
@@ -120,7 +123,11 @@ class Filesystem (object):
             Contextmanager yielding stdout stream.
         """
 
-        return zfs_stream(*args, invoker=self.invoker, **opts)
+
+        if noop:
+            return log.warning("noop: zfs %s", args)
+        else:
+            return zfs_stream(*args, invoker=self.invoker, **opts)
 
     def zfs_write (self, *args, **opts):
         """
@@ -379,19 +386,19 @@ class Snapshot (object):
             self,
         )
 
-    def send(self, stdout=True, **options):
+    def send(self, stdout=True, noop=None, **options):
         """
             Write out ZFS contents of this snapshot to stdout.
         """
 
-        return self.filesystem.zfs_read('send', *self._send_options(**options), stdout=stdout)
+        return self.filesystem.zfs_read('send', *self._send_options(**options), stdout=stdout, noop=noop)
 
-    def stream_send(self, **options):
+    def stream_send(self, noop=None, **options):
         """
             Returns a context manager for the send stream.
         """
 
-        return self.filesystem.zfs_stream('send', *self._send_options(**options))
+        return self.filesystem.zfs_stream('send', *self._send_options(**options), noop=noop)
 
 class Bookmark (object):
     def __init__ (self, filesystem, name, properties={}, noop=None):
