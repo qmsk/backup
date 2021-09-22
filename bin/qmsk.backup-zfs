@@ -197,7 +197,8 @@ class ZFSTarget (BaseTarget):
                 incremental     = '#' + incremental_bookmark if incremental_bookmark else None,
                 snapshot        = None, # create temporary snapshot
                 bookmark        = send_bookmark, # create bookmark for sent snapshot
-                purge_bookmark  = incremental_bookmark, # destroy bookmark for incremental snapshot
+                purge_bookmarks = self.zfs_bookmark + ':' + '*', # destroy bookmarks for previous incremental sends
+                keep_bookmark   = [b for b in (send_bookmark, incremental_bookmark) if b is not None], # keep current and previous bookmark, in case recv fails
                 **self.zfs_send_options
             ) as stream:
                 # create new snapshot with desired name

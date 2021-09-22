@@ -41,11 +41,12 @@ class Wrapper:
         Command wrapper
     """
 
-    def __init__(self, noop=None, sudo=None, restrict_raw=None, restrict_glob=None, allow_receive=None, allow_force_receive=None):
+    def __init__(self, noop=None, sudo=None, restrict_raw=None, restrict_glob=None, restrict_bookmarks=None, allow_receive=None, allow_force_receive=None):
         self.noop = noop
         self.sudo = sudo
         self.restrict_raw = restrict_raw
         self.restrict_glob = restrict_glob
+        self.restrict_bookmarks = restrict_bookmarks
         self.allow_receive = allow_receive
         self.allow_force_receive = allow_force_receive
 
@@ -99,6 +100,12 @@ class Wrapper:
         if self.restrict_glob and not any(fnmatch.fnmatch(zfs_name, pattern) for pattern in self.restrict_glob):
             raise Error("Restricted send source: {name}".format(name=zfs_name))
 
+        if args.bookmark and self.restrict_bookmarks and not any(fnmatch.fnmatch(args.bookmark, pattern) for pattern in self.restrict_bookmarks):
+            raise Error("Restricted --bookmark={bookmark}".format(bookmark=args.bookmark))
+
+        if args.purge_bookmark and self.restrict_bookmarks and not any(fnmatch.fnmatch(args.purge_bookmark, pattern) for pattern in self.restrict_bookmarks):
+            raise Error("Restricted --purge-bookmark={bookmark}".format(bookmark=args.purge_bookmark))
+
         zfs = qmsk.backup.zfs.open(zfs_name,
             noop    = self.noop,
             invoker = qmsk.invoke.Invoker(sudo=self.sudo),
@@ -118,13 +125,18 @@ class Wrapper:
             # send from temporary snapshot
             snapshot_context = qmsk.backup.zfs.snapshot(zfs, properties={'qmsk-backup:send': incremental_snapshot})
 
+            # cannot send temporarily created snapshot in --noop mode
+            noop_send = self.noop
+
         elif snapshot_name == '*': # zfs send tank/foo@*
             # send from most recent snapshot
             snapshot_context = wrap_context(zfs.last_snapshot())
+            noop_send = False
 
         else: # zfs send tank/foo@xxx
             # send from given snapshot
             snapshot_context = wrap_context(zfs.snapshots[snapshot_name])
+            noop_send = False
 
         log.info("zfs send %s from incremental=%s to snapshot=@%s with bookmark=%s", zfs, send_incremental, snapshot_context, args.bookmark)
 
@@ -138,6 +150,8 @@ class Wrapper:
                 compressed          = args.compressed,
                 large_block         = args.large_block,
                 dedup               = args.dedup,
+
+                noop                = noop_send,
             )
 
             if args.bookmark:
@@ -146,6 +160,28 @@ class Wrapper:
 
         if args.purge_bookmark:
             zfs.destroy_bookmark(args.purge_bookmark)
+
+        if args.purge_bookmarks:
+            if args.keep_bookmark:
+                keep = set(args.keep_bookmark)
+            else:
+                keep = set()
+
+            for bookmark in zfs.list_bookmarks():
+                if not fnmatch.fnmatch(bookmark.name, args.purge_bookmarks):
+                    log.debug("skip bookmark from purge: {bookmark}".format(bookmark=bookmark))
+                    continue
+
+                if self.restrict_bookmarks and not any(fnmatch.fnmatch(bookmark.name, pattern) for pattern in self.restrict_bookmarks):
+                    raise Error("Restricted bookmark: {bookmark}".format(bookmark=bookmark))
+
+                if bookmark.name in keep:
+                    log.debug("keep bookmark from purge: {bookmark}".format(bookmark=bookmark))
+                    continue
+
+                log.info("zfs send %s purge bookmark=%s", zfs_name, bookmark.name)
+
+                bookmark.destroy()
 
         return 0
 
@@ -165,6 +201,8 @@ class Wrapper:
         parser_send.add_argument('zfs', metavar='ZFS', help="Source ZFS filesystem, with optional @snapshot")
         parser_send.add_argument('--bookmark', metavar='BOOKMARK', help="Bookmark snapshot after send")
         parser_send.add_argument('--purge-bookmark', metavar='BOOKMARK', help="Destroy bookmark after snapshot send")
+        parser_send.add_argument('--purge-bookmarks', metavar='BOOKMARK-GLOB', help="Destroy matching bookmarks after snapshot send")
+        parser_send.add_argument('--keep-bookmark', action='append', metavar='BOOKMARK', help="Bookmarks to keep, when using --purge-bookmarks")
 
         parser_recv = subparsers.add_parser('receive', aliases=['recv'])
         parser_recv.add_argument('-F', dest='receive_force', action='store_true', help="Force a rollback of the file system to the most recent snapshot before performing the receive operation.")
@@ -220,6 +258,9 @@ def main (args):
     parser.add_argument('--restrict-raw', action='store_true',
             help="Only allow raw snapshot sends")
 
+    parser.add_argument('--restrict-bookmarks', action='append',
+            help="Only allow matching bookmarks")
+
     parser.add_argument('--allow-receive', '--allow-recv', action='store_true',
             help="Also allow zfs recv for restore operations. The --restrict-glob still applies.")
 
@@ -227,6 +268,7 @@ def main (args):
             help="Also allow zfs recv -F for restore operations. Does NOT imply --allow-receive.")
 
     parser.set_defaults(
+        restrict_bookmarks = [],
         restrict_glob = [],
     )
 
@@ -247,10 +289,12 @@ def main (args):
     # run
     try:
         wrapper = Wrapper(
-            noop            = args.noop,
-            sudo            = args.sudo,
-            restrict_raw    = args.restrict_raw,
-            restrict_glob   = args.restrict_glob,
+            noop    = args.noop,
+            sudo    = args.sudo,
+
+            restrict_raw        = args.restrict_raw,
+            restrict_glob       = args.restrict_glob,
+            restrict_bookmarks  = args.restrict_bookmarks,
 
             allow_receive       = args.allow_receive,
             allow_force_receive = args.allow_force_receive,

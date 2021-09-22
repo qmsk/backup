@@ -102,16 +102,19 @@ class Filesystem (object):
     def __str__(self):
         return self.name
 
-    def zfs_read (self, *args, **opts):
+    def zfs_read (self, *args, noop=None, **opts):
         """
             ZFS wrapper for sudo+noop
 
             Run read-only commands that are also executed when --noop.
         """
 
-        return zfs(*args, invoker=self.invoker, **opts)
+        if noop:
+            return log.warning("noop: zfs %s", args)
+        else:
+            return zfs(*args, invoker=self.invoker, **opts)
 
-    def zfs_stream (self, *args, **opts):
+    def zfs_stream (self, *args, noop=None, **opts):
         """
             ZFS wrapper for sudo+noop
 
@@ -120,7 +123,11 @@ class Filesystem (object):
             Contextmanager yielding stdout stream.
         """
 
-        return zfs_stream(*args, invoker=self.invoker, **opts)
+
+        if noop:
+            return log.warning("noop: zfs %s", args)
+        else:
+            return zfs_stream(*args, invoker=self.invoker, **opts)
 
     def zfs_write (self, *args, **opts):
         """
@@ -172,7 +179,7 @@ class Filesystem (object):
 
         self.zfs_write('create', *args)
 
-    def parse_snapshot(self, name, **opts):
+    def _parse_snapshot(self, name, **opts):
         filesystem, snapshot = name.split('@', 1)
 
         return Snapshot(self, snapshot,
@@ -184,7 +191,7 @@ class Filesystem (object):
         o = ','.join(('name', 'userrefs') + properties)
 
         for name, userrefs, *propvalues in self.zfs_read('list', '-H', '-tsnapshot', '-o' + o, '-r', self.name):
-            snapshot = self.parse_snapshot(name,
+            snapshot = self._parse_snapshot(name,
                     userrefs    = int(userrefs),
                     properties  = {name: (None if value == '-' else value) for name, value in zip(properties, propvalues)},
             )
@@ -247,9 +254,29 @@ class Filesystem (object):
             snapshots = list(self.list_snapshots())
 
         for name, tag, timestamp in self.zfs_read('holds', '-H', *snapshots):
-            snapshot = self.parse_snapshot(name.strip())
+            snapshot = self._parse_snapshot(name.strip())
 
             yield snapshot, tag.strip()
+
+    def _parse_bookmark(self, name, **opts):
+        filesystem, bookmark = name.split('#', 1)
+
+        return Bookmark(self, bookmark,
+            noop    = self.noop,
+            **opts
+        )
+
+    def list_bookmarks(self, *properties):
+        o = ','.join(('name', ) + properties)
+
+        for name, *propvalues in self.zfs_read('list', '-H', '-tbookmark', '-o' + o, '-r', self.name):
+            bookmark = self._parse_bookmark(name,
+                    properties  = {name: (None if value == '-' else value) for name, value in zip(properties, propvalues)},
+            )
+
+            log.debug("%s: bookmark %s", self, bookmark)
+
+            yield bookmark
 
     def bookmark(self, snapshot_name, bookmark):
         self.zfs_write('bookmark', '{snapshot}@{filesystem}'.format(snapshot=snapshot_name, filesystem=self.name), bookmark)
@@ -283,12 +310,6 @@ class Filesystem (object):
             pass
 
 class Snapshot (object):
-    @classmethod
-    def parse(cls, name, **opts):
-        filesystem, snapshot = name.split('@', 1)
-
-        return cls(filesystem, snapshot, **opts)
-
     def __init__ (self, filesystem, name, properties={}, noop=None, userrefs=None):
         self.filesystem = filesystem
         self.name = name
@@ -365,19 +386,33 @@ class Snapshot (object):
             self,
         )
 
-    def send(self, stdout=True, **options):
+    def send(self, stdout=True, noop=None, **options):
         """
             Write out ZFS contents of this snapshot to stdout.
         """
 
-        return self.filesystem.zfs_read('send', *self._send_options(**options), stdout=stdout)
+        return self.filesystem.zfs_read('send', *self._send_options(**options), stdout=stdout, noop=noop)
 
-    def stream_send(self, **options):
+    def stream_send(self, noop=None, **options):
         """
             Returns a context manager for the send stream.
         """
 
-        return self.filesystem.zfs_stream('send', *self._send_options(**options))
+        return self.filesystem.zfs_stream('send', *self._send_options(**options), noop=noop)
+
+class Bookmark (object):
+    def __init__ (self, filesystem, name, properties={}, noop=None):
+        self.filesystem = filesystem
+        self.name = name
+        self.properties = properties
+
+        self.noop = noop
+
+    def __str__ (self):
+        return '{filesystem}#{name}'.format(name=self.name, filesystem=self.filesystem)
+
+    def destroy(self):
+        self.filesystem.zfs_write('destroy', self)
 
 class Source:
     """
@@ -405,7 +440,7 @@ class Source:
     def __str__(self):
         return self.source
 
-    def stream_send(self, raw=None, compressed=None, large_block=None, dedup=None, incremental=None, full_incremental=None, properties=False, replication_stream=None, snapshot=None, bookmark=None, purge_bookmark=None):
+    def stream_send(self, raw=None, compressed=None, large_block=None, dedup=None, incremental=None, full_incremental=None, properties=False, replication_stream=None, snapshot=None, bookmark=None, purge_bookmark=None, purge_bookmarks=None, keep_bookmark=None):
         """
             Returns a context manager for the send stream.
         """
@@ -430,6 +465,8 @@ class Source:
             # custom qmsk.backup-ssh-command extensions
             bookmark = bookmark,
             purge_bookmark = purge_bookmark,
+            purge_bookmarks = purge_bookmarks,
+            keep_bookmark = keep_bookmark,
         ))
 
     def _receive_opts(self, snapshot=None, force=None, noop=None, verbose=None):
