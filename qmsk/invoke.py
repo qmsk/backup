@@ -2,7 +2,7 @@
     Invoke external commands, with python kwargs -> options mangling.
 """
 
-import collections
+import collections.abc
 import contextlib
 import io
 import logging
@@ -180,7 +180,7 @@ def process_opt (name, value):
     elif isinstance(value, str):
         return (opt, value)
 
-    elif isinstance(value, collections.Iterable):
+    elif isinstance(value, collections.abc.Iterable):
         opts = (process_opt(name, subvalue) for subvalue in value)
 
         # flatten
