@@ -190,7 +190,7 @@ class Filesystem (object):
     def list_snapshots(self, *properties):
         o = ','.join(('name', 'userrefs') + properties)
 
-        for name, userrefs, *propvalues in self.zfs_read('list', '-H', '-tsnapshot', '-o' + o, '-r', self.name):
+        for name, userrefs, *propvalues in self.zfs_read('list', '-H', '-tsnapshot', '-o' + o, self.name):
             snapshot = self._parse_snapshot(name,
                     userrefs    = int(userrefs),
                     properties  = {name: (None if value == '-' else value) for name, value in zip(properties, propvalues)},
